@@ -69,7 +69,7 @@ ACM extends the default CNV roles to provide specific access levels within the m
 If you are transitioning to ACM 2.16 from older, single cluster RBAC models, beware of mixing permissions.
 
 > [!CAUTION]
-> If a user retains broad **Historical ACM RBAC** roles on the Hub (such as `cluster-reader`), they will see all VMs across the fleet in the search-based summary views, but will abruptly hit an **"Access Denied"** error when drilling down into a specific VM.
+> If a user retains broad **Historical RBAC** roles on the Hub (such as `cluster-reader`), they will see all VMs across the fleet in the search-based summary views, but will abruptly hit an **"Access Denied"** error when drilling down into a specific VM.
 
 ### How to fully utilize Fine-Grained RBAC:
 
