@@ -40,7 +40,7 @@ The 2.16 release dramatically improves the user experience for managing these co
 
 ---
 
-## A Warning for "Brownfield" Environments
+## What to consider for "Brownfield" Environments
 
 If you are transitioning to ACM 2.16 from older, single cluster RBAC models, beware of mixing permissions. 
 
