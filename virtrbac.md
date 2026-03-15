@@ -21,9 +21,9 @@ Once created, the underlying operator utilizes the **ClusterPermission API** to 
 
 When a user accesses the Fleet Virtualization UI on the Hub cluster, they are looking at aggregated data. However, interacting with a specific Virtual Machine triggers a specific workflow:
 
-1. **The Request:** The user clicks to view or manage a VM.
-2. **The Cluster Proxy:** The request is routed through the **ACM Cluster Proxy**, which securely brokers the authenticated user's identity context to the managed (spoke) cluster.
-3. **The Evaluation:** The managed cluster's local Kubernetes API receives the proxy request and evaluates the user's identity string against the **RoleBindings** that ACM just pushed down.
+1.  **The Request:** The user clicks to view or manage a VM.
+2.  **The Cluster Proxy:** The request is routed through the **ACM Cluster Proxy**, which securely brokers the authenticated user's identity context to the managed (spoke) cluster.
+3.  **The Evaluation:** The managed cluster's local Kubernetes API receives the proxy request and evaluates the user's identity string against the **RoleBindings** that ACM just pushed down.
 
 > [!IMPORTANT]
 > **Crucial Prerequisite:** For this proxy evaluation to succeed, the ACM Hub and all managed clusters must be configured with **identical Identity Providers (IdPs)** so that the user and group strings match perfectly.
@@ -38,34 +38,41 @@ The 2.16 release dramatically improves the user experience for managing these co
 * **Cluster Set Assignments:** Administrators can now easily apply MRA bindings to entire **Cluster Sets** directly from the UI, rather than selecting clusters individually.
 * **Common Projects:** The new UI allows administrators to define a **"common project"** (namespace) across multiple clusters. This grants a user access to a specific namespace (e.g., `dev-project`) across the entire selected fleet in a single action.
 
+---
+
+## Role Definitions in ACM 2.16
 
 In ACM 2.16, the default roles for managing OpenShift Virtualization (CNV) workloads are divided into standard virtualization roles and ACM-specific fine-grained extension roles.
-Standard OpenShift Virtualization Roles These roles are installed automatically with the OpenShift Virtualization operator to grant core permissions on a cluster
 
-kubevirt.io:view: Grants read-only access to view all Red Hat OpenShift Virtualization resources in your cluster
-kubevirt.io:edit: Grants permissions to create, view, edit, and delete Red Hat OpenShift Virtualization resources in your cluster
-kubevirt.io:admin: Grants permissions to create, view, edit, and delete virtualization resources, as well as access the HyperConverged custom resource in the openshift-cnv namespace
+### Standard OpenShift Virtualization Roles
+These roles are installed automatically with the OpenShift Virtualization operator to grant core permissions on a cluster:
 
-ACM-Specific Virtualization Roles ACM extends the default CNV roles to provide specific access levels within the multicluster fleet virtualization interface. Depending on the exact documentation context, these are referred to using either the acm-vm-* or kubevirt.io-acm-* naming convention:
+* **`kubevirt.io:view`**: Grants read-only access to view all Red Hat OpenShift Virtualization resources in your cluster.
+* **`kubevirt.io:edit`**: Grants permissions to create, view, edit, and delete Red Hat OpenShift Virtualization resources in your cluster.
+* **`kubevirt.io:admin`**: Grants permissions to create, view, edit, and delete virtualization resources, as well as access the HyperConverged custom resource in the `openshift-cnv` namespace.
 
-acm-vm-fleet:view (also referred to as kubevirt.io-acm-hub:view): A prerequisite role applied to the hub cluster that grants the necessary permissions to view virtual machines in the multicluster fleet virtualization console
-acm-vm-fleet:admin (also referred to as kubevirt.io-acm-hub:admin): A prerequisite role applied to the hub cluster that grants permissions to view the fleet virtualization console, perform cross-cluster live migrations, and execute related administrative tasks
-acm-vm-extended:view (also referred to as kubevirt.io-acm-managed:view): An extension applied to managed clusters that grants extra view-only privileges to monitor VM operations, view configurations, and perform read-only troubleshooting in the fleet console without making changes
-acm-vm-extended:admin (also referred to as kubevirt.io-acm-managed:admin): An extension applied to managed clusters that grants administrative permissions to troubleshoot issues and complete advanced configuration tasks for virtual machines in the fleet console
-acm-vm-cluster-migration:view: Grants the permissions required to perform cross-cluster live migration readiness checks between source and destination clusters
+### ACM-Specific Virtualization Roles
+ACM extends the default CNV roles to provide specific access levels within the multicluster fleet virtualization interface. Depending on documentation context, these use either the `acm-vm-*` or `kubevirt.io-acm-*` naming convention:
 
+| Role Name | Description |
+| :--- | :--- |
+| **`acm-vm-fleet:view`** | **Hub Prerequisite.** (aka `kubevirt.io-acm-hub:view`) Grants necessary permissions to view virtual machines in the multicluster fleet virtualization console. |
+| **`acm-vm-fleet:admin`** | **Hub Prerequisite.** (aka `kubevirt.io-acm-hub:admin`) Grants permissions to view the console, perform cross-cluster live migrations, and execute administrative tasks. |
+| **`acm-vm-extended:view`** | **Managed Extension.** (aka `kubevirt.io-acm-managed:view`) Grants extra view-only privileges to monitor VM operations and troubleshooting in the fleet console. |
+| **`acm-vm-extended:admin`** | **Managed Extension.** (aka `kubevirt.io-acm-managed:admin`) Grants administrative permissions to troubleshoot and complete advanced configuration tasks. |
+| **`acm-vm-cluster-migration:view`**| Grants permissions required to perform cross-cluster live migration readiness checks between source and destination clusters. |
 
 ---
 
 ## What to consider for "Brownfield" Environments
 
-If you are transitioning to ACM 2.16 from older, single cluster RBAC models, beware of mixing permissions. 
+If you are transitioning to ACM 2.16 from older, single cluster RBAC models, beware of mixing permissions.
 
 > [!CAUTION]
 > If a user retains broad **Historical ACM RBAC** roles on the Hub (such as `cluster-reader`), they will see all VMs across the fleet in the search-based summary views, but will abruptly hit an **"Access Denied"** error when drilling down into a specific VM.
 
 ### How to fully utilize Fine-Grained RBAC:
 
-* **Drop broad Hub roles:** Remove the legacy cluster-wide permissions.
-* **Assign the prerequisite role:** Give users the narrow `acm-vm-fleet:view` role on the Hub.
-* **Use MRA:** Rely entirely on the MRA API to push specific workload roles (like `kubevirt.io:admin`) down to the downstream clusters.
+1.  **Drop broad Hub roles:** Remove the legacy cluster-wide permissions.
+2.  **Assign the prerequisite role:** Give users the narrow `acm-vm-fleet:view` role on the Hub.
+3.  **Use MRA:** Rely entirely on the MRA API to push specific workload roles (like `kubevirt.io:admin`) down to the downstream clusters.
