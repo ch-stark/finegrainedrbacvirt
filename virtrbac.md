@@ -38,6 +38,23 @@ The 2.16 release dramatically improves the user experience for managing these co
 * **Cluster Set Assignments:** Administrators can now easily apply MRA bindings to entire **Cluster Sets** directly from the UI, rather than selecting clusters individually.
 * **Common Projects:** The new UI allows administrators to define a **"common project"** (namespace) across multiple clusters. This grants a user access to a specific namespace (e.g., `dev-project`) across the entire selected fleet in a single action.
 
+
+In ACM 2.16, the default roles for managing OpenShift Virtualization (CNV) workloads are divided into standard virtualization roles and ACM-specific fine-grained extension roles.
+Standard OpenShift Virtualization Roles These roles are installed automatically with the OpenShift Virtualization operator to grant core permissions on a cluster
+
+kubevirt.io:view: Grants read-only access to view all Red Hat OpenShift Virtualization resources in your cluster
+kubevirt.io:edit: Grants permissions to create, view, edit, and delete Red Hat OpenShift Virtualization resources in your cluster
+kubevirt.io:admin: Grants permissions to create, view, edit, and delete virtualization resources, as well as access the HyperConverged custom resource in the openshift-cnv namespace
+
+ACM-Specific Virtualization Roles ACM extends the default CNV roles to provide specific access levels within the multicluster fleet virtualization interface. Depending on the exact documentation context, these are referred to using either the acm-vm-* or kubevirt.io-acm-* naming convention:
+
+acm-vm-fleet:view (also referred to as kubevirt.io-acm-hub:view): A prerequisite role applied to the hub cluster that grants the necessary permissions to view virtual machines in the multicluster fleet virtualization console
+acm-vm-fleet:admin (also referred to as kubevirt.io-acm-hub:admin): A prerequisite role applied to the hub cluster that grants permissions to view the fleet virtualization console, perform cross-cluster live migrations, and execute related administrative tasks
+acm-vm-extended:view (also referred to as kubevirt.io-acm-managed:view): An extension applied to managed clusters that grants extra view-only privileges to monitor VM operations, view configurations, and perform read-only troubleshooting in the fleet console without making changes
+acm-vm-extended:admin (also referred to as kubevirt.io-acm-managed:admin): An extension applied to managed clusters that grants administrative permissions to troubleshoot issues and complete advanced configuration tasks for virtual machines in the fleet console
+acm-vm-cluster-migration:view: Grants the permissions required to perform cross-cluster live migration readiness checks between source and destination clusters
+
+
 ---
 
 ## What to consider for "Brownfield" Environments
