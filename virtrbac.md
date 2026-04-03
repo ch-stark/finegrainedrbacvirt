@@ -2,6 +2,8 @@
 
 Red Hat Advanced Cluster Management (ACM) 2.16 introduces a pivotal shift in **Fleet Virtualization**. It moves away from broad, Hub-centric authorization toward a strict, Spoke-centric model. This ensures that your virtualization administrators have exactly the power they need—and not a shred more—aligning perfectly with the principle of **least privilege**.
 
+Please also consult official [documentation](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.16/html-single/secure_clusters/index#fine-grain-intro)
+
 ---
 
 ## The Architecture: How Fine-Grained RBAC Works
