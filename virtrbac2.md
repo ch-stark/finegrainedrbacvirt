@@ -1,6 +1,6 @@
 # Demystifying Fine-Grained RBAC for Virtualization in ACM 2.16
 
-Red Hat Advanced Cluster Management (ACM) 2.16 supports fine-grained role-based access control (RBAC) specifically tailored for OpenShift Virtualization workloads [1]. This introduces a pivotal shift in fleet virtualization, allowing administrators to grant users the exact privileges needed to view, manage, or migrate virtual machines at both the namespace and cluster levels across managed clusters.
+Red Hat Advanced Cluster Management (ACM) 2.16 supports fine-grained role-based access control (RBAC) specifically tailored for OpenShift Virtualization workloads. This introduces a pivotal shift in fleet virtualization, allowing administrators to grant users the exact privileges needed to view, manage, or migrate virtual machines at both the namespace and cluster levels across managed clusters.
 
 By fully embracing this Spoke-centric approach, your virtualization administrators are granted exactly the power they need—aligning perfectly with the principle of **least privilege**.
 
