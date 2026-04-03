@@ -4,7 +4,6 @@ Red Hat Advanced Cluster Management (ACM) 2.16 supports fine-grained role-based 
 
 By fully embracing this Spoke-centric approach, your virtualization administrators are granted exactly the power they need—aligning perfectly with the principle of **least privilege**.
 
----
 
 ## The Architecture: How Fine-Grained RBAC Works
 
@@ -24,7 +23,6 @@ When a user interacts with a Virtual Machine (VM) in the ACM console, they are c
 > [!IMPORTANT]
 > **Strict Prerequisites:** For fine-grained RBAC to function, the ACM Hub and all managed clusters must be configured with **identical identities** (users, groups, and group memberships). This ensures that an identity authenticated on the hub cluster maps correctly to the same identity on the managed clusters. Additionally, the Hub must be self-managed, and the OpenShift Virtualization operator must be installed on the Hub and any targeted managed clusters.
 
----
 
 ## Understanding the Roles: Core vs. Extensions
 
@@ -43,11 +41,10 @@ ACM provides specialized roles to provide specific access levels within the mult
 | :--- | :--- |
 | **`acm-vm-fleet:view`** | A prerequisite role applied to the Hub that provides the permissions required to view the fleet virtualization console. |
 | **`acm-vm-fleet:admin`** | A prerequisite role applied to the Hub granting permissions to view the console and perform cross-cluster live migrations and related tasks. |
-| **`acm-vm-extended:view`**| Extends the default `kubevirt.io` roles on the managed cluster. Grants permissions to view configurations, status, and details in the console, and enables read-only troubleshooting [14, 15]. |
+| **`acm-vm-extended:view`**| Extends the default `kubevirt.io` roles on the managed cluster. Grants permissions to view configurations, status, and details in the console, and enables read-only troubleshooting. |
 | **`acm-vm-extended:admin`**| Extends the default `kubevirt.io` roles on the managed cluster. Grants administrative permissions to troubleshoot and complete configuration tasks in the console. |
 | **`acm-vm-cluster-migration:view`** | Grants the permissions required for cross-cluster live migration readiness checks between source and destination clusters. |
 
----
 
 ## Real-World Scenarios: Applying the Roles
 
@@ -59,7 +56,8 @@ Grant a user or group the absolute minimum permissions required to view virtual 
 * **Managed Cluster (`RoleBinding`):** `kubevirt.io:view`.
 
 ### Scenario 2: Administrative Privilege 
-Grant a user or group the permissions required to view, troubleshoot, and manage virtual machine resources [17-19].
+Grant a user or group the permissions required to view, troubleshoot, and manage virtual machine resources.
+
 * **Hub Cluster (`ClusterRoleBinding`):** `acm-vm-fleet:view`.
 * **Managed Cluster (`RoleBinding`):** `kubevirt.io:admin` and `acm-vm-extended:admin`.
 
@@ -69,7 +67,6 @@ Grant the permissions required to perform live migrations of virtual machines ac
 * **Source & Destination Clusters (`RoleBinding`):** `kubevirt.io:admin` and `acm-vm-extended:admin`.
 * **Source & Destination Clusters (`ClusterRoleBinding`):** `acm-vm-cluster-migration:view` (Required for readiness checks).
 
----
 
 ## Pro-Tip: Navigating "Brownfield" Transitions and Ghost Permissions
 
