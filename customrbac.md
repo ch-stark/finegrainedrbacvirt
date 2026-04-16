@@ -2,19 +2,34 @@
 
 In the world of cluster management, the default "Admin," "Edit," and "View" roles are often either too permissive or too restrictive. A common request from virtualization users is the ability to create and manage Virtual Machines (VMs) without the permission to delete them. Implementing this granular control within Advanced Cluster Management (ACM) requires a bit of finesse to ensure that the custom permissions propagate correctly across your fleet and integrate seamlessly with the user interface. Here is how to implement a "Bring Your Own Role" (BYOR) strategy for OpenShift Virtualization.
 
-## 1. Defining the Custom Role
+To implement a custom role in the ACM 2.16 Fine-Grained RBAC framework, you need to create a specific prerequisite ClusterRoleBinding on the Hub cluster and then define and distribute your custom ClusterRole. Here is the step-by-step process.
 
-To achieve the "create but not delete" workflow, you need a custom ClusterRole. While you might be tempted to define every single permission, the best practice is to focus only on the specific actions you want to allow.
+## Step 1: Create the Prerequisite Hub ClusterRoleBinding
 
-### The "Create-Only" Example
+Before a user can interact with the multicluster Fleet Virtualization console, they must have the prerequisite Hub role. Create a standard ClusterRoleBinding directly on the Hub cluster to grant the user access to the UI:
 
-This role allows a user to define, start, and update a VM, but notably lacks the `delete` verb.
+```bash
+oc create clusterrolebinding <binding-name> \
+  --clusterrole=acm-vm-fleet:view \
+  --user=<username>
+```
+
+This is a **mandatory prerequisite** -- without this binding, the user will not see the Virtualization tab in the ACM console at all, regardless of any other roles they may have.
+
+## Step 2: Define and Label the Custom Role on the Hub
+
+Define your custom ClusterRole (e.g., `kubevirt-user-create`) on the Hub cluster. This role allows a user to define, start, and update a VM, but notably lacks the `delete` verb.
+
+To ensure this custom role appears in the ACM Fleet Management RBAC UI dropdown, you **must** include the `rbac.open-cluster-management.io/filter: vm-clusterroles` label.
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: kubevirt-user-create
+  labels:
+    # This label is strictly required for the role to appear in the ACM RBAC UI dropdown
+    rbac.open-cluster-management.io/filter: vm-clusterroles
 rules:
   # Permission to define and start the VM
 - apiGroups: [kubevirt.io]
@@ -24,34 +39,11 @@ rules:
 
 **Pro Tip:** Always remember that `virtualmachines` (the definition) and `virtualmachineinstances` (the running state) are separate resources. To see the running status or IP address of a VM, the user also needs access to the instances.
 
-## 2. Making Custom Roles "UI-Aware"
+## Step 3: Distribute the Custom Role to Managed Clusters
 
-One of the biggest hurdles in ACM is getting your custom roles to show up in the **Role Assignment** dropdown menu. The ACM console uses specific filters to decide which roles are relevant to virtualization.
+For Fine-Grained RBAC to work via the ACM Cluster Proxy, the execution role must exist directly on the managed (spoke) clusters. You must push the custom ClusterRole down to your targeted managed clusters.
 
-To make your role visible in the UI, you must apply specific labels to the role on the Hub cluster:
-
-- `rbac.open-cluster-management.io/filter: vm-clusterroles` -- This tells the UI that this role is a virtualization-specific role.
-- `clusterview.open-cluster-management.io/discoverable: "true"` -- This ensures the search service can index the role for the UI.
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kubevirt-user-create
-  labels:
-    rbac.open-cluster-management.io/filter: vm-clusterroles
-    clusterview.open-cluster-management.io/discoverable: "true"
-rules:
-- apiGroups: [kubevirt.io]
-  resources: [virtualmachines]
-  verbs: [get, list, watch, create, update, patch]
-```
-
-## 3. Distributing Roles Across the Fleet
-
-In a multicluster environment, the Hub cluster acts as the brain, but the permissions must physically exist on the Managed (Spoke) clusters where the VMs actually live.
-
-There are several ways to push these roles down to your clusters, but they are not created equal:
+There are several ways to achieve this, but they are not created equal:
 
 ### ACM Policies (Recommended)
 
@@ -95,22 +87,25 @@ A solid alternative that automatically handles the lifecycle of RBAC resources o
 
 While used internally by engineering teams to ship default roles, it is generally **not recommended** for custom customer implementations due to its complexity and internal-facing nature.
 
-## 4. The "Layered Role" Strategy
+## Step 4: Bind the Roles Using the ACM UI (MulticlusterRoleAssignment)
 
-The secret to a smooth user experience is **layering**. Instead of trying to build a single role that does everything, you should assign two roles to your users in the ACM UI:
+The most efficient method is to pair your custom role with the default `kubevirt.io:view` role to minimize the read-only permissions you have to manually manage.
 
-1. **The Standard View Role:** Assign `kubevirt.io:view`. This provides all the "under-the-hood" read permissions required for the OpenShift Virtualization console to function (like viewing nodes, pods, and network attachments).
+1. In the ACM console, navigate to **Fleet Management -> Identities**.
+2. Click on the target user or group and click **Create role assignment**.
+3. **Assign the Standard View Role:** Select the desired clusters and namespaces, and assign the default `kubevirt.io:view` role. This securely grants the underlying read-only permissions needed for the UI to display the VMs and instances.
+4. **Assign the Custom Create Role:** Repeat the role assignment process for the same clusters and namespaces, but this time select your custom `kubevirt-user-create` role from the dropdown menu.
 
-2. **The Custom Write Role:** Assign your custom `kubevirt-user-create` role. This adds the specific "Create" and "Update" powers on top of the view permissions.
+When applied, the **MulticlusterRoleAssignment (MRA)** API will automatically translate these assignments and push the necessary standard Kubernetes RoleBindings or ClusterRoleBindings down to the selected managed clusters.
 
-By pairing these, you ensure the UI remains fully functional while strictly enforcing your "no-deletion" policy.
+### The Layered Role Summary
 
 | Component | Role Used | Purpose |
 |---|---|---|
-| Console Navigation | `acm-vm-fleet:view` | Allows the user to see the Virtualization tab in ACM |
-| Resource Visibility | `kubevirt.io:view` | Allows the user to see VM details and statuses |
-| Custom Actions | `kubevirt-user-create` | Allows the user to create new VMs without delete rights |
+| Console Navigation | `acm-vm-fleet:view` | Allows the user to see the Virtualization tab in ACM (Step 1) |
+| Resource Visibility | `kubevirt.io:view` | Allows the user to see VM details and statuses (Step 4) |
+| Custom Actions | `kubevirt-user-create` | Allows the user to create new VMs without delete rights (Step 4) |
 
 ## Final Thoughts
 
-Custom RBAC in ACM doesn't have to be a "black box." By using Configuration Policies for distribution and UI Labels for visibility, you can create a tailored experience that fits your organization's security requirements. Stick to the layered approach -- using the default view roles as a foundation -- to save yourself the headache of troubleshooting missing read permissions.
+Custom RBAC in ACM doesn't have to be a "black box." By creating the prerequisite Hub ClusterRoleBinding (Step 1), labeling your custom role for UI visibility (Step 2), distributing it via Configuration Policies (Step 3), and binding roles through the MRA-powered ACM UI (Step 4), you can create a tailored experience that fits your organization's security requirements. Stick to the layered approach -- using the default view roles as a foundation -- to save yourself the headache of troubleshooting missing read permissions.
