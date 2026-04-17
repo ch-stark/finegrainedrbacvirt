@@ -38,6 +38,7 @@ metadata:
   labels:
     # This label is strictly required for the role to appear in the ACM RBAC UI dropdown
     rbac.open-cluster-management.io/filter: vm-clusterroles
+    clusterview.open-cluster-management.io/discoverable: "true"
 rules:
   # Permission to define and start the VM
 - apiGroups: [kubevirt.io]
