@@ -16,10 +16,6 @@ oc create clusterrolebinding <binding-name> \
   --clusterrole=acm-vm-fleet:view \
   --user=<username>
 
-# For users who need to create/manage VMs:
-oc create clusterrolebinding <binding-name> \
-  --clusterrole=acm-vm-fleet:edit \
-  --user=<username>
 ```
 
 This is a **mandatory prerequisite** -- without this binding, the user will not see the Virtualization tab in the ACM console at all, regardless of any other roles they may have.
