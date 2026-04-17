@@ -8,13 +8,12 @@ To implement a custom role in the ACM 2.16 Fine-Grained RBAC framework, you need
 
 Before a user can interact with the multicluster Fleet Virtualization console, they must have the prerequisite Hub role. Create a standard ClusterRoleBinding directly on the Hub cluster to grant the user access to the UI.
 
-**Important:** The Hub role you choose controls which action buttons appear in the console. If the user only needs to **view** VMs, use `acm-vm-fleet:view`. If the user needs to **create or manage** VMs, you must use `acm-vm-fleet:edit` instead — otherwise the Create button will not appear in the console (see [Use Case 2](#use-case-2-create-button-missing-on-the-hub-console) below for details).
+**Note:** The available Hub roles are `acm-vm-fleet:view` and `acm-vm-fleet:admin`. These are **prerequisite roles for the CNV Fleet Virtualization UI only** -- they do not grant actual VirtualMachine permissions on managed clusters. The `admin` variant adds extra permissions needed by CCLM administrators. For the vast majority of use cases (95%+), `acm-vm-fleet:view` is sufficient. Actual VM create/manage/delete permissions are controlled through the `kubevirt.io:view`, `kubevirt.io:edit`, and `kubevirt.io:admin` roles assigned via MRA in Step 4.
 
 ```bash
 oc create clusterrolebinding <binding-name> \
   --clusterrole=acm-vm-fleet:view \
   --user=<username>
-
 ```
 
 This is a **mandatory prerequisite** -- without this binding, the user will not see the Virtualization tab in the ACM console at all, regardless of any other roles they may have.
@@ -35,33 +34,35 @@ metadata:
     rbac.open-cluster-management.io/filter: vm-clusterroles
     clusterview.open-cluster-management.io/discoverable: "true"
 rules:
-  # Permission to define and start the VM
+  # Permission to create, update, and patch VMs (no delete)
 - apiGroups: [kubevirt.io]
   resources: [virtualmachines]
-  verbs: [get, list, watch, create, update, patch]
-  # Permission to see running VM status and IP addresses
-- apiGroups: [kubevirt.io]
-  resources: [virtualmachineinstances]
-  verbs: [get, list, watch]
+  verbs: [create, update, patch]
   # Permission to start/stop/restart VMs
 - apiGroups: [subresources.kubevirt.io]
   resources: [virtualmachines/start, virtualmachines/stop, virtualmachines/restart]
   verbs: [update]
-  # Permission to create disks during VM creation
-- apiGroups: [cdi.kubevirt.io]
-  resources: [datavolumes]
-  verbs: [get, list, watch, create]
+  # Permission to list namespaces (needed by the console)
 - apiGroups: [""]
-  resources: [persistentvolumeclaims]
-  verbs: [get, list, watch, create]
-  # Permission to browse instance types and preferences in the creation wizard
-- apiGroups: [instancetype.kubevirt.io]
-  resources: [virtualmachineinstancetypes, virtualmachineclusterinstancetypes,
-              virtualmachinepreferences, virtualmachineclusterpreferences]
+  resources: [namespaces]
   verbs: [get, list, watch]
 ```
 
-**Pro Tip:** Always remember that `virtualmachines` (the definition) and `virtualmachineinstances` (the running state) are separate resources. To see the running status or IP address of a VM, the user also needs access to the instances. The console's VM creation wizard also requires access to `datavolumes`, `persistentvolumeclaims`, and `instancetypes` — without these, the Create button may be suppressed even when the user has `create` on `virtualmachines`.
+This is a **minimal role designed to be layered on top of `kubevirt.io:view`** (assigned in Step 4). The `kubevirt.io:view` role already provides read access to VMs, instances, DataVolumes, and other resources. This custom role only adds the write verbs (`create`, `update`, `patch`) that are missing from the view role, deliberately excluding `delete`.
+
+**Optional:** If users also need to create disks as part of the VM creation wizard, you can extend the role with additional rules:
+
+```yaml
+  # Optional: Permission to create disks during VM creation
+- apiGroups: [cdi.kubevirt.io]
+  resources: [datavolumes]
+  verbs: [create]
+- apiGroups: [""]
+  resources: [persistentvolumeclaims]
+  verbs: [create]
+```
+
+**Pro Tip:** Always remember that `virtualmachines` (the definition) and `virtualmachineinstances` (the running state) are separate resources. The `kubevirt.io:view` role already covers read access to both, so your custom role only needs to add the write permissions you want to grant.
 
 ## Step 3: Distribute the Custom Role to Managed Clusters
 
@@ -100,22 +101,12 @@ spec:
                 rules:
                 - apiGroups: [kubevirt.io]
                   resources: [virtualmachines]
-                  verbs: [get, list, watch, create, update, patch]
-                - apiGroups: [kubevirt.io]
-                  resources: [virtualmachineinstances]
-                  verbs: [get, list, watch]
+                  verbs: [create, update, patch]
                 - apiGroups: [subresources.kubevirt.io]
                   resources: [virtualmachines/start, virtualmachines/stop, virtualmachines/restart]
                   verbs: [update]
-                - apiGroups: [cdi.kubevirt.io]
-                  resources: [datavolumes]
-                  verbs: [get, list, watch, create]
                 - apiGroups: [""]
-                  resources: [persistentvolumeclaims]
-                  verbs: [get, list, watch, create]
-                - apiGroups: [instancetype.kubevirt.io]
-                  resources: [virtualmachineinstancetypes, virtualmachineclusterinstancetypes,
-                              virtualmachinepreferences, virtualmachineclusterpreferences]
+                  resources: [namespaces]
                   verbs: [get, list, watch]
 ```
 
@@ -142,7 +133,7 @@ When applied, the **MulticlusterRoleAssignment (MRA)** API will automatically tr
 
 | Component | Role Used | Purpose |
 |---|---|---|
-| Console Navigation | `acm-vm-fleet:edit` | Allows the user to see the Virtualization tab **and** action buttons like Create in ACM (Step 1) |
+| Console Navigation | `acm-vm-fleet:view` | Allows the user to see the Virtualization tab in ACM (Step 1). Use `acm-vm-fleet:admin` only for CCLM administrators |
 | Resource Visibility | `kubevirt.io:view` | Allows the user to see VM details and statuses (Step 4) |
 | Custom Actions | `kubevirt-user-create` | Allows the user to create new VMs without delete rights (Step 4) |
 
@@ -158,39 +149,21 @@ The user can see the Virtualization tab and list existing VMs, but the **Create 
 
 ### Root Cause
 
-The ACM console performs a SelfSubjectAccessReview (SSAR) to decide which action buttons to render. There are typically three things that cause the Create button to be hidden:
+The ACM console performs a SelfSubjectAccessReview (SSAR) to decide which action buttons to render. There are typically two things that cause the Create button to be hidden:
 
-1. **The Hub ClusterRoleBinding uses `acm-vm-fleet:view` instead of `acm-vm-fleet:edit`.** The `view` role only grants read access to the console — write-action buttons like Create are suppressed. This is the most common cause.
+1. **The custom role is missing resources required by the creation wizard.** Even if `virtualmachines/create` is allowed, the console wizard also checks for permissions on `datavolumes`, `persistentvolumeclaims`, and `instancetypes`. If any of these fail the SSAR, the console may hide the Create button entirely. This is the most common cause.
 
-2. **The custom role is missing resources required by the creation wizard.** Even if `virtualmachines/create` is allowed, the console wizard also checks for permissions on `datavolumes`, `persistentvolumeclaims`, and `instancetypes`. If any of these fail the SSAR, the console may hide the Create button entirely.
+2. **The MRA did not push the RoleBinding to the managed cluster.** The role exists on the spoke, but the user is not bound to it, so the SSAR through the cluster proxy returns "not allowed."
 
-3. **The MRA did not push the RoleBinding to the managed cluster.** The role exists on the spoke, but the user is not bound to it, so the SSAR through the cluster proxy returns "not allowed."
+**Note:** The Hub prerequisite role (`acm-vm-fleet:view` or `acm-vm-fleet:admin`) only controls access to the Fleet Virtualization UI tab itself -- it does not affect which action buttons appear. The Create button visibility is determined by the `kubevirt.io` roles and your custom roles on the managed clusters.
 
 ### Fix
 
-**1. Upgrade the Hub role from `view` to `edit`:**
+**1. Ensure the custom role covers all necessary resources:**
 
-```bash
-# Remove the old view-only binding
-oc delete clusterrolebinding <old-binding-name>
+Make sure your `kubevirt-user-create` ClusterRole includes the resources listed in [Step 2](#step-2-define-and-label-the-custom-role-on-the-hub). At minimum, it needs `virtualmachines` (create/update/patch), `subresources` (start/stop/restart), and `namespaces` (get/list/watch). If users need to create disks, also add `datavolumes` and `persistentvolumeclaims`.
 
-# Create the new binding with edit access
-oc create clusterrolebinding <binding-name> \
-  --clusterrole=acm-vm-fleet:edit \
-  --user=<username>
-```
-
-To check which Hub roles are available:
-
-```bash
-oc get clusterroles | grep acm-vm-fleet
-```
-
-**2. Expand the custom role to cover all creation-related resources:**
-
-Make sure your `kubevirt-user-create` ClusterRole includes all the resources listed in [Step 2](#step-2-define-and-label-the-custom-role-on-the-hub) above — not just `virtualmachines`.
-
-**3. Verify bindings on the managed cluster:**
+**2. Verify bindings on the managed cluster:**
 
 ```bash
 # On the managed cluster, check the RoleBinding exists
@@ -201,7 +174,7 @@ oc auth can-i create virtualmachines.kubevirt.io -n <namespace> --as=<username>
 oc auth can-i create datavolumes.cdi.kubevirt.io -n <namespace> --as=<username>
 ```
 
-**4. Verify the MRA was created and is in effect:**
+**3. Verify the MRA was created and is in effect:**
 
 ```bash
 # On the Hub, check the MulticlusterRoleAssignment
@@ -212,7 +185,7 @@ oc get multiclusterroleassignments -A | grep <username>
 
 | Check | Command | Expected |
 |---|---|---|
-| Hub role is `edit` (not `view`) | `oc get clusterrolebindings -o wide \| grep <username>` | `acm-vm-fleet:edit` |
+| Hub prerequisite role bound | `oc get clusterrolebindings -o wide \| grep <username>` | `acm-vm-fleet:view` (or `admin` for CCLM admins) |
 | Custom role exists on Hub | `oc get clusterrole kubevirt-user-create` | Found |
 | Custom role has the UI label | `oc get clusterrole kubevirt-user-create -o jsonpath='{.metadata.labels}'` | Contains `rbac.open-cluster-management.io/filter: vm-clusterroles` |
 | Custom role exists on spoke | `oc get clusterrole kubevirt-user-create` (on managed cluster) | Found |
@@ -228,7 +201,8 @@ Custom RBAC in ACM doesn't have to be a "black box." By creating the prerequisit
 
 Key takeaways:
 
-- **Use `acm-vm-fleet:edit` (not `view`) on the Hub** if the user needs to perform any write actions like creating VMs.
-- **Include all resources the creation wizard needs** in your custom role — `datavolumes`, `persistentvolumeclaims`, and `instancetypes` in addition to `virtualmachines`.
+- **`acm-vm-fleet:view` is sufficient for most users** on the Hub — it grants access to the Fleet Virtualization UI. Only use `acm-vm-fleet:admin` for CCLM administrators.
+- **VM permissions are controlled by `kubevirt.io` roles and your custom roles**, not by the Hub prerequisite role.
+- **Include all resources the creation wizard needs** in your custom role — `namespaces` and `subresources` in addition to `virtualmachines`.
 - **Verify end-to-end** by checking both the Hub binding and the managed cluster binding with `oc auth can-i`.
-- Stick to the layered approach — using the default view roles as a foundation — to save yourself the headache of troubleshooting missing read permissions.
+- Stick to the layered approach — using `kubevirt.io:view` as a foundation — to save yourself the headache of troubleshooting missing read permissions.
