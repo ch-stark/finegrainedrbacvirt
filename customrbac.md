@@ -11,7 +11,6 @@ Before a user can interact with the multicluster Fleet Virtualization console, t
 **Important:** The Hub role you choose controls which action buttons appear in the console. If the user only needs to **view** VMs, use `acm-vm-fleet:view`. If the user needs to **create or manage** VMs, you must use `acm-vm-fleet:edit` instead — otherwise the Create button will not appear in the console (see [Use Case 2](#use-case-2-create-button-missing-on-the-hub-console) below for details).
 
 ```bash
-# For view-only users:
 oc create clusterrolebinding <binding-name> \
   --clusterrole=acm-vm-fleet:view \
   --user=<username>
