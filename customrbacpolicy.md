@@ -1,4 +1,4 @@
-# Policy-to-UI RBAC Architecture for VirtualMachines with PolicyGenerator
+# RHACM RBAC Architecture for VirtualMachines with PolicyGenerator
 
 To implement the "Policy-to-UI" RBAC architecture using the PolicyGenerator, you provide the raw Kubernetes manifests for your ClusterRoles and MultiClusterRoleAssignment (MRA), and use a single PolicyGenerator configuration file to compile them into a unified PolicySet targeted at the correct Hub and Spoke clusters.
 
