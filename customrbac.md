@@ -133,76 +133,10 @@ When applied, the **MulticlusterRoleAssignment (MRA)** API will automatically tr
 
 | Component | Role Used | Purpose |
 |---|---|---|
-| Console Navigation | `acm-vm-fleet:view` | Allows the user to see the Virtualization tab in ACM (Step 1). Use `acm-vm-fleet:admin` only for CCLM administrators |
+| Console Navigation | `acm-vm-fleet:view` | Allows the user to see the Virtualization tab in ACM (Step 1) |
 | Resource Visibility | `kubevirt.io:view` | Allows the user to see VM details and statuses (Step 4) |
 | Custom Actions | `kubevirt-user-create` | Allows the user to create new VMs without delete rights (Step 4) |
 
----
-
-## Use Case 2: Create Button Missing on the Hub Console
-
-A common scenario: you have followed all the steps above, your custom `kubevirt-user-create` role is defined, distributed, and bound — yet the **Create button does not appear** in the ACM Fleet Virtualization console. The user can see VMs but cannot create new ones. Here is how to diagnose and fix this.
-
-### Symptom
-
-The user can see the Virtualization tab and list existing VMs, but the **Create Virtual Machine** button is missing from the console toolbar.
-
-### Root Cause
-
-The ACM console performs a SelfSubjectAccessReview (SSAR) to decide which action buttons to render. There are typically two things that cause the Create button to be hidden:
-
-1. **The custom role is missing resources required by the creation wizard.** Even if `virtualmachines/create` is allowed, the console wizard also checks for permissions on `datavolumes`, `persistentvolumeclaims`, and `instancetypes`. If any of these fail the SSAR, the console may hide the Create button entirely. This is the most common cause.
-
-2. **The MRA did not push the RoleBinding to the managed cluster.** The role exists on the spoke, but the user is not bound to it, so the SSAR through the cluster proxy returns "not allowed."
-
-**Note:** The Hub prerequisite role (`acm-vm-fleet:view` or `acm-vm-fleet:admin`) only controls access to the Fleet Virtualization UI tab itself -- it does not affect which action buttons appear. The Create button visibility is determined by the `kubevirt.io` roles and your custom roles on the managed clusters.
-
-### Fix
-
-**1. Ensure the custom role covers all necessary resources:**
-
-Make sure your `kubevirt-user-create` ClusterRole includes the resources listed in [Step 2](#step-2-define-and-label-the-custom-role-on-the-hub). At minimum, it needs `virtualmachines` (create/update/patch), `subresources` (start/stop/restart), and `namespaces` (get/list/watch). If users need to create disks, also add `datavolumes` and `persistentvolumeclaims`.
-
-**2. Verify bindings on the managed cluster:**
-
-```bash
-# On the managed cluster, check the RoleBinding exists
-oc get rolebindings -n <namespace> | grep kubevirt-user-create
-
-# Test whether the user actually has create permission
-oc auth can-i create virtualmachines.kubevirt.io -n <namespace> --as=<username>
-oc auth can-i create datavolumes.cdi.kubevirt.io -n <namespace> --as=<username>
-```
-
-**3. Verify the MRA was created and is in effect:**
-
-```bash
-# On the Hub, check the MulticlusterRoleAssignment
-oc get multiclusterroleassignments -A | grep <username>
-```
-
-### Diagnostic Checklist
-
-| Check | Command | Expected |
-|---|---|---|
-| Hub prerequisite role bound | `oc get clusterrolebindings -o wide \| grep <username>` | `acm-vm-fleet:view` (or `admin` for CCLM admins) |
-| Custom role exists on Hub | `oc get clusterrole kubevirt-user-create` | Found |
-| Custom role has the UI label | `oc get clusterrole kubevirt-user-create -o jsonpath='{.metadata.labels}'` | Contains `rbac.open-cluster-management.io/filter: vm-clusterroles` |
-| Custom role exists on spoke | `oc get clusterrole kubevirt-user-create` (on managed cluster) | Found |
-| RoleBinding exists on spoke | `oc get rolebindings -n <ns> \| grep kubevirt` | Binding present |
-| User can create VMs on spoke | `oc auth can-i create virtualmachines.kubevirt.io -n <ns> --as=<user>` | `yes` |
-| User can create DataVolumes on spoke | `oc auth can-i create datavolumes.cdi.kubevirt.io -n <ns> --as=<user>` | `yes` |
-
----
-
 ## Final Thoughts
 
-Custom RBAC in ACM doesn't have to be a "black box." By creating the prerequisite Hub ClusterRoleBinding with the correct access level (Step 1), labeling your custom role for UI visibility (Step 2), distributing it via Configuration Policies (Step 3), and binding roles through the MRA-powered ACM UI (Step 4), you can create a tailored experience that fits your organization's security requirements.
-
-Key takeaways:
-
-- **`acm-vm-fleet:view` is sufficient for most users** on the Hub — it grants access to the Fleet Virtualization UI. Only use `acm-vm-fleet:admin` for CCLM administrators.
-- **VM permissions are controlled by `kubevirt.io` roles and your custom roles**, not by the Hub prerequisite role.
-- **Include all resources the creation wizard needs** in your custom role — `namespaces` and `subresources` in addition to `virtualmachines`.
-- **Verify end-to-end** by checking both the Hub binding and the managed cluster binding with `oc auth can-i`.
-- Stick to the layered approach — using `kubevirt.io:view` as a foundation — to save yourself the headache of troubleshooting missing read permissions.
+Custom RBAC in ACM doesn't have to be a "black box." By creating the prerequisite Hub ClusterRoleBinding (Step 1), labeling your custom role for UI visibility (Step 2), distributing it via Configuration Policies (Step 3), and binding roles through the MRA-powered ACM UI (Step 4), you can create a tailored experience that fits your organization's security requirements. Stick to the layered approach -- using `kubevirt.io:view` as a foundation -- to save yourself the headache of troubleshooting missing read permissions.

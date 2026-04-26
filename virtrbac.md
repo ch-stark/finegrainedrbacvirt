@@ -80,3 +80,7 @@ If you are transitioning to ACM 2.16 Fine-Grained RBAC from older "Historical AC
 Historical RBAC relies purely on Hub-side permissions, granting broad visibility into the indexed **ACM Search** database. However, Fine-Grained RBAC utilizes the **ACM Cluster Proxy** to evaluate actual permissions directly on the spoke cluster. 
 
 To fully utilize Fine-Grained RBAC and enforce the principle of least privilege, you should replace broad Hub read permissions with the specialized `acm-vm-fleet:view` Hub role, and rely entirely on the MRA API to distribute access strictly to the namespaces where the user needs it.
+
+## Next Step: Disabling Role Aggregation
+
+Fine-Grained RBAC gives you the tools to **explicitly grant** VM access—but by default, KubeVirt role aggregation still **implicitly grants** VM permissions to every namespace admin, editor, and viewer. To fully close this gap and make MRA the single source of truth for VM access, see **[Disabling KubeVirt Role Aggregation for Maximum Isolation](disable-role-aggregation.md)**.
