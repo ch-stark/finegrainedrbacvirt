@@ -1,31 +1,29 @@
 # RHACM RBAC Architecture for VirtualMachines with PolicyGenerator
 
-This document outlines implementing a "Policy-to-UI" RBAC architecture using PolicyGenerator for managing virtual machine access across Red Hat Advanced Cluster Management (RHACM) Hub and Spoke clusters. It demonstrates a **multi-tenant** setup where different teams receive different levels of VM access.
+To implement the "Policy-to-UI" RBAC architecture using the PolicyGenerator, you provide the raw Kubernetes manifests for your ClusterRoles and MultiClusterRoleAssignment (MRA), and use a single PolicyGenerator configuration file to compile them into a unified PolicySet targeted at the correct Hub and Spoke clusters.
 
-## Directory Organization
+---
 
-The configuration separates Hub and Spoke manifests, with per-tenant MRA definitions:
+## 1. Directory Structure
+
+Create a clean separation between the raw manifests intended for the Hub and those intended for the Spoke clusters:
 
 ```
 vm-rbac-config/
 ├── kustomization.yaml
 ├── policy-generator.yaml
 ├── hub-manifests/
-│   ├── 01-hub-clusterrole-execution.yaml
-│   ├── 02-hub-clusterrole-admin.yaml
-│   ├── 03-hub-mra-tenant-a.yaml
-│   ├── 04-hub-mra-tenant-b.yaml
-│   └── 05-hub-mra-tenant-c.yaml
+│   ├── 01-hub-clusterrole.yaml
+│   └── 02-hub-mra.yaml
 └── spoke-manifests/
-    ├── 01-spoke-clusterrole-execution.yaml
-    └── 02-spoke-clusterrole-admin.yaml
+    └── 01-spoke-clusterrole.yaml
 ```
 
-## Hub Cluster Roles (UI Discovery)
+## 2. Raw Kubernetes Manifests
 
-Each Hub ClusterRole includes a mandatory label for RHACM Fleet Management UI discovery and the `discoverable` label for ACM Search integration. We define two tiers: an **execution** role (start/stop/restart) and an **admin** role (create/update/patch). Both are minimal roles designed to be **layered on top of `kubevirt.io:view`**, which already provides read access to VMs, instances, DataVolumes, and other resources.
+These are standard Kubernetes YAML files. The PolicyGenerator will automatically convert them into compliance objects.
 
-### Execution Role
+### `hub-manifests/01-hub-clusterrole.yaml` — The UI Discovery Role
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -33,49 +31,15 @@ kind: ClusterRole
 metadata:
   name: custom-vm-execution-role
   labels:
+    # Mandatory label for RHACM Fleet Management UI discovery
     rbac.open-cluster-management.io/filter: vm-clusterroles
-    clusterview.open-cluster-management.io/discoverable: "true"
 rules:
   - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["subresources.kubevirt.io"]
-    resources: ["virtualmachines/start", "virtualmachines/stop", "virtualmachines/restart"]
-    verbs: ["update"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
+    resources: ["virtualmachines", "virtualmachineinstances"]
+    verbs: ["get", "list", "watch", "start", "stop", "restart"]
 ```
 
-### Admin Role
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: custom-vm-admin-role
-  labels:
-    rbac.open-cluster-management.io/filter: vm-clusterroles
-    clusterview.open-cluster-management.io/discoverable: "true"
-rules:
-  - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines"]
-    verbs: ["create", "update", "patch"]
-  - apiGroups: ["subresources.kubevirt.io"]
-    resources: ["virtualmachines/start", "virtualmachines/stop", "virtualmachines/restart"]
-    verbs: ["update"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
-```
-
-## MultiClusterRoleAssignments (Fleet Assignment per Tenant)
-
-Each tenant gets its own MRA, binding the appropriate ClusterRole(s) to the tenant's group and namespace. This is the key to multi-tenancy: different groups receive different permission levels through the same PolicyGenerator pipeline.
-
-### Tenant A — Full VM Admin
-
-Tenant A operators can create, update, and manage VMs. Combined with `kubevirt.io:view`, they get full read access plus write permissions — but notably no `delete` verb.
+### `hub-manifests/02-hub-mra.yaml` — The Fleet Assignment
 
 ```yaml
 apiVersion: rbac.open-cluster-management.io/v1alpha1
@@ -89,102 +53,28 @@ spec:
     name: "tenant-a-operators"
     apiGroup: rbac.authorization.k8s.io
   roles:
-    - custom-vm-admin-role
-    - kubevirt.io:view
-```
-
-### Tenant B — Execution Only
-
-Tenant B operators can start, stop, and restart VMs, but cannot create or delete them.
-
-```yaml
-apiVersion: rbac.open-cluster-management.io/v1alpha1
-kind: MultiClusterRoleAssignment
-metadata:
-  name: tenant-b-vm-assignment
-  namespace: tenant-b-namespace
-spec:
-  subject:
-    kind: Group
-    name: "tenant-b-operators"
-    apiGroup: rbac.authorization.k8s.io
-  roles:
     - custom-vm-execution-role
     - kubevirt.io:view
 ```
 
-### Tenant C — Read-Only
-
-Tenant C viewers can only observe VM state; they have no write or execution permissions.
-
-```yaml
-apiVersion: rbac.open-cluster-management.io/v1alpha1
-kind: MultiClusterRoleAssignment
-metadata:
-  name: tenant-c-vm-assignment
-  namespace: tenant-c-namespace
-spec:
-  subject:
-    kind: Group
-    name: "tenant-c-viewers"
-    apiGroup: rbac.authorization.k8s.io
-  roles:
-    - kubevirt.io:view
-```
-
-## Multi-Tenant Summary
-
-| Tenant | Group | Namespace | Roles | Effective Access |
-|--------|-------|-----------|-------|-----------------|
-| A | `tenant-a-operators` | `tenant-a-namespace` | `custom-vm-admin-role`, `kubevirt.io:view` | Create, update, patch VMs + start/stop/restart |
-| B | `tenant-b-operators` | `tenant-b-namespace` | `custom-vm-execution-role`, `kubevirt.io:view` | Start, stop, restart existing VMs |
-| C | `tenant-c-viewers` | `tenant-c-namespace` | `kubevirt.io:view` | Read-only VM visibility |
-
-## Spoke Cluster Roles (Remote Execution)
-
-The Spoke ClusterRoles mirror the Hub definitions with matching names. Both tiers must be distributed so that MRA bindings resolve correctly on managed clusters.
-
-### Execution Role
+### `spoke-manifests/01-spoke-clusterrole.yaml` — The Remote Execution Role
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: custom-vm-execution-role
+  name: custom-vm-execution-role # Must match the MRA role name
 rules:
   - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["subresources.kubevirt.io"]
-    resources: ["virtualmachines/start", "virtualmachines/stop", "virtualmachines/restart"]
-    verbs: ["update"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
+    resources: ["virtualmachines", "virtualmachineinstances"]
+    verbs: ["get", "list", "watch", "start", "stop", "restart"]
 ```
 
-### Admin Role
+---
 
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: custom-vm-admin-role
-rules:
-  - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines"]
-    verbs: ["create", "update", "patch"]
-  - apiGroups: ["subresources.kubevirt.io"]
-    resources: ["virtualmachines/start", "virtualmachines/stop", "virtualmachines/restart"]
-    verbs: ["update"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
-```
+## 3. PolicyGenerator Configuration
 
-## PolicyGenerator Configuration
-
-The generator routes manifests to appropriate clusters via placement selectors. All tenant MRAs are bundled into a single Hub policy, while spoke clusters receive the ClusterRole definitions. You can optionally split spoke policies by environment to further restrict which roles are available on which clusters.
+The `policy-generator.yaml` defines the Hub policy and the Spoke policy, sets the cluster placements, and logically groups them into a PolicySet.
 
 ```yaml
 apiVersion: policy.open-cluster-management.io/v1
@@ -192,62 +82,49 @@ kind: PolicyGenerator
 metadata:
   name: vm-rbac-generator
 policyDefaults:
-  namespace: policies
-  remediationAction: enforce
-  complianceType: musthave
+  namespace: policies         # The namespace on the Hub where policies reside
+  remediationAction: enforce  # Instructs ACM to create the objects
+  complianceType: musthave    # Ensures the objects exist exactly as defined
   policySets:
+    # Automatically generates the PolicySet object linking the generated policies
     - name: vm-fine-grained-rbac-policyset
-      description: "Deploys Custom VM ClusterRoles and MultiClusterRoleAssignments for all tenants"
+      description: "Deploys Custom VM ClusterRoles and MultiClusterRoleAssignments"
 policies:
+  # --- 1. HUB POLICY ---
   - name: policy-hub-vm-rbac
     placement:
       labelSelector:
         matchExpressions:
           - key: name
             operator: In
-            values: ["local-cluster"]
+            values: ["local-cluster"] # Targets ONLY the Hub
     manifests:
-      - path: hub-manifests/01-hub-clusterrole-execution.yaml
-      - path: hub-manifests/02-hub-clusterrole-admin.yaml
-      - path: hub-manifests/03-hub-mra-tenant-a.yaml
-      - path: hub-manifests/04-hub-mra-tenant-b.yaml
-      - path: hub-manifests/05-hub-mra-tenant-c.yaml
+      - path: hub-manifests/01-hub-clusterrole.yaml
+      - path: hub-manifests/02-hub-mra.yaml
 
-  - name: policy-spoke-vm-rbac-production
+  # --- 2. SPOKE POLICY ---
+  - name: policy-spoke-vm-rbac
     placement:
       labelSelector:
-        matchLabels:
-          env: production
+        matchExpressions:
+          - key: name
+            operator: NotIn
+            values: ["local-cluster"] # Targets ALL managed clusters EXCEPT the Hub
     manifests:
-      - path: spoke-manifests/01-spoke-clusterrole-execution.yaml
-      - path: spoke-manifests/02-spoke-clusterrole-admin.yaml
+      - path: spoke-manifests/01-spoke-clusterrole.yaml
+---
 
-  - name: policy-spoke-vm-rbac-staging
-    placement:
-      labelSelector:
-        matchLabels:
-          env: staging
-    manifests:
-      - path: spoke-manifests/01-spoke-clusterrole-execution.yaml
-```
+## 4. Kustomization File
 
-With environment-based placement, staging clusters only receive the execution role, while production clusters get both execution and admin roles. This adds another layer of protection: even if Tenant A has admin permissions via MRA, those permissions only take effect on clusters where the admin ClusterRole has been deployed.
-
-## Kustomization Deployment
+Trigger the PolicyGenerator using a `kustomization.yaml` file:
 
 ```yaml
 generators:
   - policy-generator.yaml
 ```
 
-The PolicyGenerator automatically produces the complete RHACM infrastructure including Policies, ConfigurationPolicies, Placements, PlacementBindings, and PolicySet groupings when processed by Argo CD or Kustomize.
+## How to Deploy
 
-## Adding a New Tenant
+When Argo CD (or standard Kustomize) processes this directory, the PolicyGenerator plugin will natively emit the complex RHACM Policies, ConfigurationPolicies, Placements, PlacementBindings, and the PolicySet grouping.
 
-To onboard a new tenant, you only need to:
-
-1. Create a new MRA YAML file in `hub-manifests/` with the tenant's group, namespace, and desired role(s).
-2. Add the new file path to the `policy-hub-vm-rbac` manifests list in `policy-generator.yaml`.
-3. Commit and push — Argo CD or your GitOps pipeline handles the rest.
-
-No changes are needed on spoke clusters, since the ClusterRole definitions are already deployed. The MRA API handles creating the appropriate RoleBindings on managed clusters automatically.
+Because the generator handles the boilerplate, your GitOps repository remains clean — containing only the raw RBAC rules and a simple routing configuration.
