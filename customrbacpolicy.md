@@ -23,7 +23,7 @@ vm-rbac-config/
 
 ## Hub Cluster Roles (UI Discovery)
 
-Each Hub ClusterRole includes a mandatory label for RHACM Fleet Management UI discovery. We define two tiers: an **execution** role (start/stop/restart) and an **admin** role (full VM lifecycle including create and delete).
+Each Hub ClusterRole includes a mandatory label for RHACM Fleet Management UI discovery and the `discoverable` label for ACM Search integration. We define two tiers: an **execution** role (start/stop/restart) and an **admin** role (create/update/patch). Both are minimal roles designed to be **layered on top of `kubevirt.io:view`**, which already provides read access to VMs, instances, DataVolumes, and other resources.
 
 ### Execution Role
 
@@ -34,10 +34,17 @@ metadata:
   name: custom-vm-execution-role
   labels:
     rbac.open-cluster-management.io/filter: vm-clusterroles
+    clusterview.open-cluster-management.io/discoverable: "true"
 rules:
   - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines", "virtualmachineinstances"]
-    verbs: ["get", "list", "watch", "start", "stop", "restart"]
+    resources: ["virtualmachines"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["subresources.kubevirt.io"]
+    resources: ["virtualmachines/start", "virtualmachines/stop", "virtualmachines/restart"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
 ```
 
 ### Admin Role
@@ -49,10 +56,17 @@ metadata:
   name: custom-vm-admin-role
   labels:
     rbac.open-cluster-management.io/filter: vm-clusterroles
+    clusterview.open-cluster-management.io/discoverable: "true"
 rules:
   - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines", "virtualmachineinstances"]
-    verbs: ["get", "list", "watch", "create", "delete", "update", "patch", "start", "stop", "restart"]
+    resources: ["virtualmachines"]
+    verbs: ["create", "update", "patch"]
+  - apiGroups: ["subresources.kubevirt.io"]
+    resources: ["virtualmachines/start", "virtualmachines/stop", "virtualmachines/restart"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
 ```
 
 ## MultiClusterRoleAssignments (Fleet Assignment per Tenant)
@@ -61,7 +75,7 @@ Each tenant gets its own MRA, binding the appropriate ClusterRole(s) to the tena
 
 ### Tenant A — Full VM Admin
 
-Tenant A operators manage the full VM lifecycle, including creating and deleting VMs.
+Tenant A operators can create, update, and manage VMs. Combined with `kubevirt.io:view`, they get full read access plus write permissions — but notably no `delete` verb.
 
 ```yaml
 apiVersion: rbac.open-cluster-management.io/v1alpha1
@@ -122,7 +136,7 @@ spec:
 
 | Tenant | Group | Namespace | Roles | Effective Access |
 |--------|-------|-----------|-------|-----------------|
-| A | `tenant-a-operators` | `tenant-a-namespace` | `custom-vm-admin-role`, `kubevirt.io:view` | Full VM lifecycle (create, delete, start, stop, restart) |
+| A | `tenant-a-operators` | `tenant-a-namespace` | `custom-vm-admin-role`, `kubevirt.io:view` | Create, update, patch VMs + start/stop/restart |
 | B | `tenant-b-operators` | `tenant-b-namespace` | `custom-vm-execution-role`, `kubevirt.io:view` | Start, stop, restart existing VMs |
 | C | `tenant-c-viewers` | `tenant-c-namespace` | `kubevirt.io:view` | Read-only VM visibility |
 
@@ -139,8 +153,14 @@ metadata:
   name: custom-vm-execution-role
 rules:
   - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines", "virtualmachineinstances"]
-    verbs: ["get", "list", "watch", "start", "stop", "restart"]
+    resources: ["virtualmachines"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["subresources.kubevirt.io"]
+    resources: ["virtualmachines/start", "virtualmachines/stop", "virtualmachines/restart"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
 ```
 
 ### Admin Role
@@ -152,8 +172,14 @@ metadata:
   name: custom-vm-admin-role
 rules:
   - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines", "virtualmachineinstances"]
-    verbs: ["get", "list", "watch", "create", "delete", "update", "patch", "start", "stop", "restart"]
+    resources: ["virtualmachines"]
+    verbs: ["create", "update", "patch"]
+  - apiGroups: ["subresources.kubevirt.io"]
+    resources: ["virtualmachines/start", "virtualmachines/stop", "virtualmachines/restart"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
 ```
 
 ## PolicyGenerator Configuration
