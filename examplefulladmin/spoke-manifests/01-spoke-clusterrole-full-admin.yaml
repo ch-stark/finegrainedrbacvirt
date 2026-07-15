@@ -5,62 +5,15 @@ metadata:
   name: custom-vm-full-admin-role
 rules:
   - apiGroups:
-      - kubevirt.io
+      - '*'
     resources:
-      - virtualmachines
-      - virtualmachineinstances
-      - virtualmachineinstancereplicasets
-      - virtualmachineinstancemigrations
-      - virtualmachineinstancepresets
+      - '*'
     verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - subresources.kubevirt.io
-    resources:
-      - virtualmachines/start
-      - virtualmachines/stop
-      - virtualmachines/restart
-      - virtualmachines/addvolume
-      - virtualmachines/removevolume
-      - virtualmachineinstances/console
-      - virtualmachineinstances/vnc
-      - virtualmachineinstances/pause
-      - virtualmachineinstances/unpause
-      - virtualmachineinstances/freeze
-      - virtualmachineinstances/unfreeze
-      - virtualmachineinstances/softreboot
-      - virtualmachineinstances/guestosinfo
+      - '*'
+  - nonResourceURLs:
+      - '*'
     verbs:
-      - get
-      - update
-  - apiGroups:
-      - cdi.kubevirt.io
-    resources:
-      - datavolumes
-      - datasources
-      - dataimportcrons
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - namespaces
-      - persistentvolumeclaims
-    verbs:
-      - create
-      - delete
+      - '*'
       - get
       - list
       - patch
