@@ -2,31 +2,37 @@ apiVersion: policy.open-cluster-management.io/v1
 kind: PolicyGenerator
 metadata:
   name: vm-rbac-generator
+# Explicit placement binding name to avoid duplicate/conflicting default names
+placementBindingDefaults:
+  name: "vm-rbac-binding" 
 policyDefaults:
   namespace: policies
   remediationAction: enforce
   complianceType: musthave
+  # 1. Point to the PolicySet by its string name
   policySets:
-    - name: vm-fine-grained-rbac-policyset
-      description: Deploys custom VM ClusterRoles and MulticlusterRoleAssignments for full fleet virtualization admin access
+    - vm-fine-grained-rbac-policyset
+  # 2. CRITICAL: Honor individual placements even though policies belong to a set
+  generatePlacementWhenInSet: true
 policies:
   - name: policy-hub-vm-rbac
+    # Placements mapped via the cluster-name-agnostic local-cluster label
     placement:
       labelSelector:
-        matchExpressions:
-          - key: name
-            operator: In
-            values:
-              - local-cluster
+        matchLabels:
+          local-cluster: "true"
     manifests:
       - path: hub-manifests/01-hub-clusterrole-full-admin.yaml
   - name: policy-spoke-vm-rbac
     placement:
       labelSelector:
         matchExpressions:
-          - key: name
-            operator: NotIn
-            values:
-              - local-cluster
+          - key: local-cluster
+            operator: DoesNotExist
     manifests:
       - path: spoke-manifests/01-spoke-clusterrole-full-admin.yaml
+
+# 3. Define the actual PolicySet structure at the root level of the file
+policySets:
+  - name: vm-fine-grained-rbac-policyset
+    description: "Deploys custom VM ClusterRoles and MulticlusterRoleAssignments for full fleet virtualization admin access"
