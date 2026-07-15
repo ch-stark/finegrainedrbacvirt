@@ -38,6 +38,13 @@ oc create clusterrolebinding virt-full-admins-fleet-admin \
 - Update placement name/namespace to match your cluster selection
 - Adjust `policies` namespace in `policy-generator.yaml` if needed
 
+## Optional roles
+
+Six additional OpenShift Virtualization roles (execution, admin-without-delete, snapshot,
+migration, storage, console) are available under `hub-manifests/optional/` and
+`spoke-manifests/optional/`. They are **not** included in the default PolicyGenerator
+config — apply or wire them in manually. See [optional-roles.md](optional-roles.md).
+
 ## Related docs
 
 - [Multi-tenant PolicyGenerator guide](../customrbacpolicy.md)
