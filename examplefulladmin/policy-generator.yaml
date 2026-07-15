@@ -1,0 +1,34 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PolicyGenerator
+metadata:
+  name: vm-rbac-generator
+policyDefaults:
+  namespace: policies
+  remediationAction: enforce
+  complianceType: musthave
+  policySets:
+    - name: vm-fine-grained-rbac-policyset
+      description: Deploys custom VM ClusterRoles and MulticlusterRoleAssignments for full fleet virtualization admin access
+policies:
+  - name: policy-hub-vm-rbac
+    placement:
+      labelSelector:
+        matchExpressions:
+          - key: name
+            operator: In
+            values:
+              - local-cluster
+    manifests:
+      - path: hub-manifests/01-hub-clusterrole-full-admin.yaml
+      - path: hub-manifests/02-hub-mra-full-admin.yaml
+
+  - name: policy-spoke-vm-rbac
+    placement:
+      labelSelector:
+        matchExpressions:
+          - key: name
+            operator: NotIn
+            values:
+              - local-cluster
+    manifests:
+      - path: spoke-manifests/01-spoke-clusterrole-full-admin.yaml
