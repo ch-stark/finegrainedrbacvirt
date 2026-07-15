@@ -20,7 +20,7 @@ policies:
               - local-cluster
     manifests:
       - path: hub-manifests/01-hub-clusterrole-full-admin.yaml
-      - path: hub-manifests/02-hub-mra-full-admin.yaml
+  
 
   - name: policy-spoke-vm-rbac
     placement:
