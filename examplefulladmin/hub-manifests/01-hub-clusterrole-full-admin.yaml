@@ -1,0 +1,21 @@
+# Hub ClusterRole: full VM admin permissions for the Fleet Virtualization UI.
+# Layer this role with kubevirt.io:admin, acm-vm-extended:admin, and
+# acm-vm-cluster-migration:view via the MulticlusterRoleAssignment below.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: custom-vm-full-admin-role
+  labels:
+    rbac.open-cluster-management.io/filter: vm-clusterroles
+    clusterview.open-cluster-management.io/discoverable: "true"
+rules:
+  - apiGroups:
+      - '*'
+    resources:
+      - '*'
+    verbs:
+      - '*'
+  - nonResourceURLs:
+      - '*'
+    verbs:
+      - '*'

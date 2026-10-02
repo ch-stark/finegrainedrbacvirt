@@ -1,0 +1,46 @@
+# Full fleet virtualization admin: custom role + all built-in ACM/CNV roles.
+#
+# Also create a hub ClusterRoleBinding for the console prerequisite:
+#   oc create clusterrolebinding <name> \
+#     --clusterrole=acm-vm-fleet:admin --group=virt-full-admins
+#
+# Replace virt-full-admins, all-clusters placement, and namespace as needed.
+apiVersion: rbac.open-cluster-management.io/v1beta1
+kind: MulticlusterRoleAssignment
+metadata:
+  name: full-admin-vm-assignment
+  namespace: open-cluster-management-global-set
+spec:
+  subject:
+    kind: Group
+    name: virt-full-admins
+    apiGroup: rbac.authorization.k8s.io
+  roleAssignments:
+    - name: custom-vm-full-admin
+      clusterRole: custom-vm-full-admin-role
+      clusterSelection:
+        type: placements
+        placements:
+          - name: all-clusters
+            namespace: open-cluster-management-global-set
+    - name: kubevirt-admin
+      clusterRole: kubevirt.io:admin
+      clusterSelection:
+        type: placements
+        placements:
+          - name: all-clusters
+            namespace: open-cluster-management-global-set
+    - name: acm-vm-extended-admin
+      clusterRole: acm-vm-extended:admin
+      clusterSelection:
+        type: placements
+        placements:
+          - name: all-clusters
+            namespace: open-cluster-management-global-set
+    - name: acm-vm-cluster-migration-view
+      clusterRole: acm-vm-cluster-migration:view
+      clusterSelection:
+        type: placements
+        placements:
+          - name: all-clusters
+            namespace: open-cluster-management-global-set

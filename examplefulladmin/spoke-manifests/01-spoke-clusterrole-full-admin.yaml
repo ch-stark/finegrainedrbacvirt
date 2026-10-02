@@ -1,0 +1,21 @@
+# Spoke ClusterRole: same rules as the hub role, without UI discovery labels.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: custom-vm-full-admin-role
+rules:
+  - apiGroups:
+      - '*'
+    resources:
+      - '*'
+    verbs:
+      - '*'
+  - nonResourceURLs:
+      - '*'
+    verbs:
+      - '*'
+      - get
+      - list
+      - patch
+      - update
+      - watch
