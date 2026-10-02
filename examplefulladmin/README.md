@@ -2,6 +2,8 @@
 
 PolicyGenerator-based deployment of a custom **full admin** role for ACM Fleet Virtualization, layered with the built-in CNV and ACM extension roles.
 
+`custom-vm-full-admin-role` allows every API group, resource, and verb, including non-resource URLs. The assignment omits `targetNamespaces`, so it becomes a cluster-wide binding on every selected managed cluster. That is OpenShift cluster-admin equivalent, not VM-only administration. `kubevirt.io:admin` and `acm-vm-extended:admin` do not narrow it. Use this only for a group that should administer the whole cluster. For VM administration without cluster-admin, bind `kubevirt.io:admin` and `acm-vm-extended:admin` and leave this custom role out.
+
 ## Role stack
 
 | Layer | Role | Where |
