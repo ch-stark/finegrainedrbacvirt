@@ -62,8 +62,6 @@ Hub bindings are ClusterRoleBindings on the hub. `MulticlusterRoleAssignment` cr
 | **Cross-cluster live migration operator** | `acm-vm-fleet:admin` | On **source and destination**: `kubevirt.io:admin` and `acm-vm-extended:admin`, plus cluster-scoped `acm-vm-cluster-migration:view`. |
 | **Day-2 operator** (start and stop, no delete) | `acm-vm-fleet:view` | `kubevirt.io:view` plus a custom ClusterRole. See [`customrbac.md`](customrbac.md). Label the custom role `rbac.open-cluster-management.io/filter: vm-clusterroles` so it appears in the ACM UI. |
 
-YAML for the first three personas: [`examples/`](examples/).
-
 ## In-cluster migration UI
 
 For the virtualization console **on a managed cluster**, you currently assign three extra ClusterRoles besides kubevirt.io and `acm-vm-extended`:
