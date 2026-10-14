@@ -8,6 +8,23 @@ Official documentation: [Secure clusters — fine-grained RBAC](https://docs.red
 
 > **Do not assign these names.** Some older documentation still lists `kubevirt.io-acm-managed:admin`, `kubevirt.io-acm-managed:view`, `kubevirt.io-acm-hub:admin`, and `kubevirt.io-acm-hub:view`. Those ClusterRoles are not installed on ACM 2.16, 2.17, or later. Use the live names in this post.
 
+## Enable it on the MultiClusterHub
+
+Fine-grained RBAC is **not** enabled by default in ACM 2.16 or 2.17. The `acm-vm-fleet:*` and `acm-vm-extended:*` ClusterRoles, and the `MulticlusterRoleAssignment` API, appear only after you enable the `fine-grained-rbac` component on the `MultiClusterHub`. Until that is true, nothing in this post has a role to bind.
+
+```bash
+oc patch mch multiclusterhub -n open-cluster-management --type=json \
+  -p='[{"op": "add", "path": "/spec/overrides/components/-", "value": {"name": "fine-grained-rbac", "enabled": true}}]'
+```
+
+The default name is `multiclusterhub` in the `open-cluster-management` namespace. If `spec.overrides.components` already contains `fine-grained-rbac`, set that entry to `enabled: true` instead of appending a second one. Confirm the roles exist before you bind them:
+
+```bash
+oc get mch multiclusterhub -n open-cluster-management \
+  -o jsonpath='{range .spec.overrides.components[?(@.name=="fine-grained-rbac")]}{.name}{" enabled="}{.enabled}{"\n"}{end}'
+oc get clusterrole acm-vm-fleet:view acm-vm-extended:view
+```
+
 ## Two planes: hub and spoke
 
 ACM does not grant VM access from hub configuration alone. You always bind roles in two places.
@@ -29,7 +46,7 @@ A broad hub role such as `cluster-reader` fills the list and then fails on click
 
 ## Live roles: bind both, do not assume “extends”
 
-OpenShift Virtualization installs `kubevirt.io:view`, `kubevirt.io:edit`, and `kubevirt.io:admin`. ACM installs **companion** ClusterRoles. Those companions do not include kubevirt.io permissions. You bind both.
+OpenShift Virtualization installs `kubevirt.io:view`, `kubevirt.io:edit`, and `kubevirt.io:admin`. After `fine-grained-rbac` is enabled on the MultiClusterHub, ACM installs **companion** ClusterRoles. Those companions do not include kubevirt.io permissions. You bind both.
 
 | Role | Where | What it is | What it is not |
 |---|---|---|---|
@@ -102,12 +119,13 @@ Fleet-wide steps, including a ConfigurationPolicy example: [`disable-role-aggreg
 
 ## Apply order
 
-1. Use the same users and groups on the hub and on managed clusters.
-2. Create a hub ClusterRoleBinding for `acm-vm-fleet:view` or `acm-vm-fleet:admin`.
-3. Create a `MulticlusterRoleAssignment` in a namespace that has a `ManagedClusterSetBinding` for the Placement cluster set. Prefer groups and fewer objects.
-4. On each managed cluster, confirm the RoleBindings exist.
-5. Run `oc auth can-i get virtualmachines -n <namespace> --as=<user>` on the **managed cluster**, not only on the hub.
-6. If you need deny-by-default VM access, opt out of role aggregation on OpenShift Virtualization 4.22 or later **after** step 3.
+1. Enable `fine-grained-rbac` on the `MultiClusterHub`. It is off by default. See [Enable it on the MultiClusterHub](#enable-it-on-the-multiclusterhub).
+2. Use the same users and groups on the hub and on managed clusters.
+3. Create a hub ClusterRoleBinding for `acm-vm-fleet:view` or `acm-vm-fleet:admin`.
+4. Create a `MulticlusterRoleAssignment` in a namespace that has a `ManagedClusterSetBinding` for the Placement cluster set. Prefer groups and fewer objects.
+5. On each managed cluster, confirm the RoleBindings exist.
+6. Run `oc auth can-i get virtualmachines -n <namespace> --as=<user>` on the **managed cluster**, not only on the hub.
+7. If you need deny-by-default VM access, opt out of role aggregation on OpenShift Virtualization 4.22 or later **after** step 4.
 
 ## Former VMware administrators
 
