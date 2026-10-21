@@ -30,7 +30,7 @@ The console never asks the spoke identity provider. Configure that provider on t
 | Cluster sets, policies, placements, cluster-proxy | Current ACM |
 | `MulticlusterRoleAssignment` for OpenShift Virtualization | Generally available in ACM 2.16 and 2.17. The API is still `rbac.open-cluster-management.io/v1beta1`. Generally available means Red Hat supports this use. It does not mean the API has moved to `v1`. The `fine-grained-rbac` component on `MultiClusterHub` is off until you enable it. |
 | Log and metric scope through the same assignment | Not generally available. There will not be a second API. |
-| Applications and Argo CD | Partially separate product RBAC.  |
+| Applications and Argo CD | Partially separate product RBAC but needs to fit together.  |
 | Admission control | Not direct ACM RBAC but often related |
 
 ## Cluster sets
