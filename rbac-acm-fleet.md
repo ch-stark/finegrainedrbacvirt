@@ -1,237 +1,123 @@
 # RBAC in ACM: the patterns you need
 
-ACM has no single RBAC switch. Access is several patterns, and each one answers a different question.
+ACM has two decisions, and they are not the same one.
 
-Three ideas carry the guide:
+The **hub** decides what you see: which clusters, which console tabs, which queries. The **spoke** decides what you can do. A console click that returns `Forbidden` is usually a hub role without a matching spoke binding.
 
-- **The default is a service account.** ACM deploys service accounts that perform actions on managed clusters. That is simple, and it has three costs: audit, flexibility, and hub access becoming spoke power.
-- **People should be impersonated.** The hub decides what a user can see. The spoke decides what that same user can do. A grant on only one side leaves them stuck.
-- **Not everything is GA.** `MulticlusterRoleAssignment` is GA for OpenShift Virtualization. Log and metric scoping through the same object is planned, not shipped.
+Controllers keep service accounts. People should be impersonated. The hub user and the hub groups are what the spoke should see in the audit log.
 
-Present the sections through the checklist. The appendix is reference.
+Open work that used to sit in this text is listed in [Open RBAC items](https://github.com/ch-stark/finegrainedrbacvirt/blob/main/open-rbac-items.md).
 
-## Overview
+## The model
 
-1. **Default actions run as a service account.** The spoke audit log names that account, not the hub user. Anyone who can drive the account from the hub gets its rights on the spoke.
-2. **Two planes, one identity provider.** A hub role decides what you see. A spoke binding decides what you can do. Use the same identity provider on the hub and the spokes, so the group name matches.
-3. **Cluster sets control visibility.** A `ManagedClusterSet` is the set of clusters a team may see and target.
-4. **`MulticlusterRoleAssignment` is the central grant for people.** One object on the hub says who gets which role, on which clusters, in which namespaces.
-5. There are edge cases. **RBAC cannot say "only this field."** For a rule such as "a namespace admin may add only one label," use admission control on the cluster that owns the object.
+| | Hub | Spoke |
+| --- | --- | --- |
+| Question | What may this person see? | What may this person do? |
+| Object | Cluster set role, hub console role | `RoleBinding` or `ClusterRoleBinding` |
+| Who acts for a person | The console, through cluster-proxy | The apiserver, as the impersonated user and groups |
+| Who acts for a controller | The hub controller | A service account, applied by the work agent |
 
-## The default: service accounts on the spoke
+**Cluster-proxy** is the addon that lets the hub reach a managed cluster API without publishing that API. On a console click it impersonates the hub username and the hub groups. The authenticated caller is the cluster-proxy service account. Spoke RBAC is then evaluated as the impersonated user. The audit log has both names. Cluster-proxy does not apply `ManifestWork` objects. The work agent does that, as its own service account. Cluster-proxy does not read the spoke identity provider.
 
-By default, ACM deploys service accounts that perform actions on managed clusters. The klusterlet work agent applies what the hub sends. Addon agents (policy, observability, and others) act with their own accounts. The spoke authorizes those accounts. It does not authorize the person who clicked on the hub.
+**The default path does not impersonate.** The klusterlet work agent and the addon agents (policy, observability, GitOps, and others) act as service accounts. The audit line names `system:serviceaccount:...`, not the person who clicked. The service account's role is the ceiling for everyone who can trigger it. Access to the hub that can submit that work is access to that spoke power. Do not create one service account per hub user. That repeats the problem.
 
-That design has three problems.
+The console path needs the hub to be self-managed (`local-cluster`). The group string on the hub token and the group string on the spoke binding must be the same characters. ACM does not translate directories. Two people who share a short name, such as `AP001` in two directories, are one Kubernetes subject.
 
-**Audit.** The spoke audit log records `system:serviceaccount:...`. It does not record which hub user caused the change. You cannot answer "who deleted this virtual machine" from the spoke log when the agent applied the change.
+The console never asks the spoke identity provider. Configure that provider on the spokes only when the same people log in there directly. If they must not, leave the user provider off the spokes. That blocks direct login more simply than an admission rule on tokens. Keep a break-glass administrator for when the hub is down.
 
-**Flexibility.** The service account's role is the permission for everyone who can trigger it. You cannot give one team virtual-machine admin and another team view through the same account.
+## What you need, by version
 
-**Hub access becomes spoke power.** A person who can submit work from the hub, or who can use a hub role that talks to those agents, can make a privileged spoke service account act. The accounts often hold broad rights, because they must apply whatever the hub sends. Access to the hub is then access to those rights on the spoke.
+| Capability | Where it stands |
+| --- | --- |
+| Cluster sets, policies, placements, cluster-proxy | Current ACM |
+| `MulticlusterRoleAssignment` for OpenShift Virtualization | Generally available in ACM 2.16 and 2.17. The API is still `rbac.open-cluster-management.io/v1beta1`. Generally available means Red Hat supports this use. It does not mean the API has moved to `v1`. The `fine-grained-rbac` component on `MultiClusterHub` is off until you enable it. |
+| Log and metric scope through the same assignment | Not generally available. There will not be a second API. |
+| Applications and Argo CD | Separate product RBAC. See [Applications and admission](apps-and-admission.md). |
+| Admission control | Not ACM RBAC. Same companion file. |
 
-Controllers should keep their service accounts. 
+## Cluster sets
 
-People should not use them. The console path in the rest of this guide impersonates the logged-in user, and a binding on the spoke limits that user. The spoke audit log can name the person (`impersonatedUser`) instead of only the agent.
+A cluster set is the hub's answer to "which clusters may this group see?"
 
-## How a console click is authorized
+For a set named `zone-a`, ACM creates three roles. Bind them with a `ClusterRoleBinding`.
 
-```mermaid
-flowchart LR
-    U[User] -->|logs in| IDP[Hub identity provider]
-    IDP --> H[Hub: console and cluster set roles]
-    H -->|"1. What do I see?"| L[Cluster list and tabs]
-    H -->|"2. Click. Proxy impersonates user and groups"| S[Spoke API server]
-    S -->|"3. RoleBinding for this user or group?"| D{Allowed?}
-    D -->|yes| OK[Action succeeds]
-    D -->|no| NO[Forbidden]
-```
+| Role | What it grants |
+| --- | --- |
+| `open-cluster-management:managedclusterset:view:zone-a` | See the clusters in that set, and the resources the console attaches to that view. |
+| `open-cluster-management:managedclusterset:admin:zone-a` | Manage the set. |
+| `open-cluster-management:managedclusterset:bind:zone-a` | View, plus create a `ManagedClusterSetBinding` for that set. |
 
-The hub role fills the list. Opening the object still fails when the spoke has no binding for the same group. The hub must be self-managed (`local-cluster`).
+`view` does not create the binding. `bind` does. A `Placement` only selects clusters from sets that are already bound into its namespace. The platform owner creates that binding. The team receives `view`.
 
-Direct login is the other path. The spoke identity provider authenticates the user, then the spoke bindings apply. The console path never asks the spoke directory. Because only the name string matters, `AP001` on the hub and `AP001` on the spoke share every binding that names `AP001`. Use one identity provider on the hub and the spokes so those strings belong to the same person.
+`view` does not grant virtual machines, applications, or logs on the spoke. It does not open Argo CD. A developer who should work only on the spoke does not need a cluster set role and does not need a hub login. ACM still controls and monitors that cluster.
+
+Keep a `global-set` (or the equivalent) for platform owners. Do not hand that view to every team.
+
+## MulticlusterRoleAssignment
+
+`MulticlusterRoleAssignment` is centralized RBAC. One object on the hub names a subject, a `Placement`, and the ClusterRoles to bind on the selected spokes. The controller creates the spoke bindings. Prefer one assignment per group.
+
+| `targetNamespaces` | Result on each selected cluster |
+| --- | --- |
+| Empty or omitted | One `ClusterRoleBinding`. The role applies in every namespace. |
+| A list | One `RoleBinding` in each listed namespace. Nothing elsewhere, including `openshift-cnv`. |
+
+The `Placement` must exist first. It should select only clusters where the ClusterRole exists. A placement that includes clusters without OpenShift Virtualization will fail a binding to `kubevirt.io:view`.
+
+Namespace lists from the hub are the hard case. The list does not grow when someone creates a project. The same application uses different project names on different clusters. A long list is merged with every other assignment into one `ClusterPermission` and one `ManifestWork`, and that work object can hit the size limit (about 1.5 MiB). Applications add more lists: the team namespace, the GitOps source namespaces, and the destination namespace. Leave `targetNamespaces` empty unless the hub team can keep the list current.
 
 ## Worked example: Zone A virtual machine admins
 
-Goal: the people in group `zonea-vm-admins` may administer virtual machines on Zone A clusters, without being cluster-admin, and without using a spoke service account.
+The group `zonea-vm-admins` may see Zone A in the console and administer virtual machines there. They are not cluster administrators.
 
-Use a consistent identity provider on the hub and on every Zone A spoke. ACM matches the username and the group name. It does not translate one directory into another. Configure the same provider, and the same group claim, on the hub and on each managed cluster. The console impersonates the hub user and the hub groups. The spoke allows the action when a binding names that same group string.
+1. **Hub identity.** Put the people in `zonea-vm-admins` on the hub identity provider. Add that same provider on the Zone A spokes only if those people log in on the spokes. The console path does not need it.
+2. **Hub, cluster set.** Bind `zonea-vm-admins` to `open-cluster-management:managedclusterset:view:zone-a`. A platform owner with `open-cluster-management:managedclusterset:bind:zone-a` creates the `ManagedClusterSetBinding` in the namespace where placements will live.
+3. **Hub, spoke power.** Create one `MulticlusterRoleAssignment` on the hub, in that namespace. The subject is the group. The placement selects Zone A clusters that run OpenShift Virtualization. The roles are `kubevirt.io:admin` and `acm-vm-extended:admin`. The controller creates the bindings on the spokes. This object is not created on the spokes.
+4. **Hub, console tab.** Bind the same group to `acm-vm-fleet:view`. Cross-cluster live migration needs `acm-vm-fleet:admin` on the hub and `acm-vm-cluster-migration:view` on both the source and the destination spoke.
+5. **Check.** On a Zone A spoke, `oc auth can-i` as a member of the group. In the spoke audit log, the click should name the person (`impersonatedUser`), not only `system:serviceaccount:...`.
 
-| Step | Where | What |
+| Step | Where the object is created | Object |
 | --- | --- | --- |
-| 1 | Shared identity provider | Configure that provider on the hub and on each Zone A spoke. Put the people in group `zonea-vm-admins`. |
-| 2 | Hub | Give the group cluster set `view` for Zone A, and `acm-vm-fleet:view`, so the clusters and the Virtualization tab appear. |
-| 3 | Spokes | One `MulticlusterRoleAssignment` for that group, with `kubevirt.io:admin` and `acm-vm-extended:admin`, placed on the Zone A clusters. |
-| 4 | Revoke | Remove a person from the group. The bindings stay. |
+| 2 | Hub | `ClusterRoleBinding` to `open-cluster-management:managedclusterset:view:zone-a`, and a `ManagedClusterSetBinding` created by someone who has `bind` |
+| 3 | Hub | `MulticlusterRoleAssignment` |
+| 3, applied by the controller | Spoke | `ClusterRoleBinding` or `RoleBinding` for the group |
+| 4 | Hub | `ClusterRoleBinding` to `acm-vm-fleet:view` |
 
-`fine-grained-rbac` is off by default on the `MultiClusterHub` in ACM 2.16 and 2.17. Enable it before step 3, or the `acm-vm-*` roles do not exist. The command is in the appendix.
+Enable `fine-grained-rbac` before the `acm-vm-*` roles exist. The command is in the appendix.
 
-## The patterns at a glance
+## Hub objects that equal spoke power
 
-A real deployment combines several of these. Patterns 1, 2, 4, and 5 grant access to people. Pattern 3 often grants developers nothing on the hub: they work on the spokes, and ACM controls and monitors. Pattern 6 rolls grants out. Pattern 7 limits a change that RBAC has already allowed. None of them replace the service accounts that controllers use for their own work.
+The opening problem is not only the default service accounts. Whoever can write the objects below can grant spoke permissions. Treat create and update on them as cluster-admin on the clusters they can reach.
 
-| # | Pattern | Question it answers | Where it is enforced |
-| --- | --- | --- | --- |
-| 1 | Cluster set RBAC | Which clusters can this team see? | Hub |
-| 2 | `MulticlusterRoleAssignment` | Which group gets which role, on which clusters and namespaces? | Spoke bindings, created from the hub. A namespace list is harder to own than one cluster-wide binding. |
-| 3 | Application RBAC | Where do developers change applications? | Often on the spoke only, with spoke RBAC. ACM controls and monitors. Hub login and central Argo CD are optional, and many customers do not allow them. |
-| 4 | Virtualization RBAC | Who sees and manages virtual machines? | Hub console role plus spoke roles |
-| 5 | Observability RBAC | Who may query logs and metrics? | Cluster set roles today. Assignment scope is planned. |
-| 6 | ACM policies | How do bindings roll out and get removed? | Hub policy, object on the spoke |
-| 7 | Admission control | Which field or label change is allowed? | Spoke, after RBAC allows the request |
+| Hub object | What it can do on a spoke |
+| --- | --- |
+| `MulticlusterRoleAssignment` | Bind any ClusterRole the placement's clusters have, to any subject you name. |
+| `Policy` with a `PlacementBinding` | Ship any manifest the template contains, including `ClusterRoleBinding` objects. `remediationAction: enforce` applies them. |
+| `ManifestWork` | The work agent applies it as a privileged service account. It lives in the managed cluster's namespace on the hub. |
+| `Placement` | Does not apply anything by itself. It aims the three objects above. A placement only sees sets bound into its namespace. |
+| `ManagedClusterSetBinding` | Projects a set into a namespace, so placements there can select those clusters. Creating it requires `managedclustersets/bind`, not namespace admin alone. |
 
-## Pattern 1: Cluster set RBAC
+These objects are namespaced (except the bind permission, which is a subresource check). The OpenShift `admin` role in a namespace can create a `Policy`, a `Placement`, and a `MulticlusterRoleAssignment` there. Give that role only to people who are allowed to grant spoke power.
 
-Cluster set RBAC controls which clusters a team can see. It does not give them rights inside those clusters.
+Practical split:
 
-For a set named `zone-a`, ACM creates:
+- Platform owners create bindings, assignments, policies, and manifest works.
+- A team that only needs to see clusters gets `managedclusterset:view:<set>`, not `admin` on the namespace the set is bound into.
+- Do not bind a production set into a namespace where developers are namespace admins.
 
-- `open-cluster-management:admin:zone-a` manages the set.
-- `open-cluster-management:view:zone-a` shows the clusters and lets a `Placement` select them.
-
-Bind `open-cluster-management:view:zone-a` to the group with a RoleBinding in the namespace that holds the `ManagedClusterSetBinding`. A `Placement` only selects clusters from sets bound to its namespace, which keeps a team's assignments inside its sites.
-
-`open-cluster-management-global-set` can see every cluster. Use it for platform owners, not for a tenant.
-
-Cluster set `view` does not grant `virtualmachines`, applications, or log queries on the spoke. A placement aimed at a cluster that lacks the target ClusterRole makes the console fail with `clusterrole ... not found`.
-
-## Pattern 2: Centralized grants with MulticlusterRoleAssignment
-
-`MulticlusterRoleAssignment` is the centralized grant for a person or a group. One object on the hub names the group, the ClusterRole, the `Placement`, and the namespaces. The cluster set says which clusters they can see. The assignment says what they may do there. The controller creates a `RoleBinding` or `ClusterRoleBinding` on each selected spoke, for that group, not for a shared service account.
-
-| Consumer | Status | What happens |
-| --- | --- | --- |
-| OpenShift Virtualization | GA | The controller creates the binding on each selected managed cluster. |
-| MultiClusterLogging | Not GA yet | The query path will inject the assignment's cluster and namespace scope into LogQL. The client cannot widen it. |
-| MultiClusterMetrics | Not GA yet | The same scope will be injected into PromQL. |
-
-Logging and metrics will not get a second RBAC API. Until they ship, only the OpenShift Virtualization path is GA.
-
-Leave `targetNamespaces` empty for a cluster-wide `ClusterRoleBinding`. Set it to create a `RoleBinding` only in the listed namespaces. A namespace-level assignment grants nothing in `openshift-cnv` or in any project that is not listed.
-
-### Namespace-level RBAC from the hub
-
-Namespace-level RBAC is more complex when you work from a centralized place.
-
-On the spoke, someone creates one RoleBinding in a namespace that already exists on that cluster. From the hub, `targetNamespaces` is the list of those namespaces. The controller creates a RoleBinding in each listed namespace, on each cluster the Placement selects. An empty list is the simple centralized grant: one cluster-wide ClusterRoleBinding. A filled list is the complex grant.
-
-- A new namespace on one spoke does not update the hub object. Someone has to add the name.
-- Clusters in one Placement often use different project names. The same list then misses a project on one cluster and names a project that does not exist on another.
-- The grant applies only to names on the list. For virtualization, that excludes `openshift-cnv` and any project left off the list.
-- A long list, repeated across clusters, merges into one `ClusterPermission` and can hit the ManifestWork size limit. Keep one assignment per group, and keep the list short. The namespace example is in the appendix.
-- Centralized applications add more lists that have to match: the team namespace, the GitOps `sourceNamespaces`, the AppProject `sourceNamespaces`, and the destination namespace. Miss one and the Application is not reconciled, or it lands in the wrong place.
-
-Spoke-local RBAC stays one binding in the namespace the developer is already using. Take on the hub list when a platform team must roll that same namespace grant out, and is ready to own the list.
-
-The ClusterRole must already exist on the managed cluster. The `Placement` must exist first and should select only clusters in the right set. Prefer one assignment per group, with several `roleAssignments`, not one object per user. Many assignments for the same clusters merge into one `ClusterPermission` and can hit the ManifestWork size limit.
-
-Examples are in the appendix.
-
-## Pattern 3: RBAC for applications
-
-Many customers do not allow centralized access. Developers do not log in to the hub, and they do not open Argo CD there. RBAC is configured on the spokes. Developers work on their own clusters. ACM controls those clusters and monitors them: policy, lifecycle, and observability. The hub is the platform console, not the application console.
-
-| | Spoke-local, the common case | Centralized, only when the customer allows it |
-| --- | --- | --- |
-| Developer | Logs in to the spoke. Spoke RoleBindings decide what they can do. | Logs in to the hub, or to Argo CD on the hub. |
-| Where the app changes | On that cluster, as that person. The spoke audit log names them. | A GitOps or agent service account on the destination. |
-| What ACM is for | Control and monitoring, used by the platform team. | Also the place where the ApplicationSet and the Argo CD policy live. |
-
-In the spoke-local case, grant developers no cluster set role, no hub namespace, and no Argo CD role. Put their RoleBindings on the spoke. ACM can still deliver those bindings with a policy. The binding is enforced where the developer works.
-
-Namespace-level RBAC is the part that gets harder if you move that work to the hub. A cluster-wide role is one binding. A per-project role becomes a list of namespaces on every selected cluster, and the hub has to keep that list current. Pattern 2 spells that out.
-
-The rest of this pattern is the centralized case. Open it only for a customer who wants developers or app-admins on the hub. ACM RBAC and Argo CD RBAC stay independent there. A cluster set role does not open Argo CD. An Argo CD role does not grant a cluster set. Answer three questions before you open either door:
-
-1. Who may log in to the hub, and which clusters may they see?
-2. Who may open Argo CD on the hub?
-3. Which account performs the change on the managed cluster?
-
-### Who may access the hub
-
-When centralized access is allowed, a developer and an app-admin may log in to the hub. Give them their cluster set. Keep hub `cluster-admin` for the platform owners. When it is not allowed, this table does not apply: those people have no hub grant.
-
-| Person | Hub grant | What that grant allows |
-| --- | --- | --- |
-| Developer | `open-cluster-management:view:zone-a`, plus create and update on `Application` and `ApplicationSet` in the team namespace | The ACM console lists Zone A. A `Placement` in that namespace can select those clusters. They can commit the ApplicationSet in their namespace. |
-| App-admin | The same cluster set `view` | The same cluster list in the ACM console. Argo CD rights are a separate grant, below. They are still not hub `cluster-admin`. |
-| Platform owner | `open-cluster-management-global-set`, and admin on the GitOps control-plane namespace | Every cluster, and the Argo CD installation itself. |
-
-Cluster set `view` shows clusters. It does not create Applications, open the Argo CD UI, or grant rights on a spoke. Hub access is still powerful: a hub role that can submit work can drive the service accounts from the start of this guide. Keep the developer and the app-admin inside their set and their namespace.
-
-### Who may open Argo CD on the hub
-
-A developer is allowed into the Argo CD UI only when Argo CD's own policy says so.
-
-If Argo CD trusts the same identity provider as the hub, that developer can reach the Argo CD login. After login, Argo CD ignores ACM cluster sets and ACM fine-grained RBAC. It allows the request only when `argocd-rbac-cm` (or `spec.rbac` on the OpenShift GitOps `ArgoCD` object) maps their group to a role, and the `AppProject` allows that role.
-
-Leave `policy.default` empty. `policy.default: role:readonly` gives every authenticated Argo CD user read access to every project. Map groups explicitly:
-
-| Person | Argo CD role | Typical policy |
-| --- | --- | --- |
-| Developer | No Argo CD role, unless they must use the UI | Prefer Kubernetes RBAC on the team namespace, so they edit the ApplicationSet without the UI. If they need the UI, grant `applications` `get` on `dev-project/*` only. |
-| App-admin | Project role | `get` and `sync` on that project's applications. Leave `exec` and `override` off. |
-| Platform owner | `role:admin` | The control plane, cluster secrets, and project definitions. |
-
-A developer who can see Zone A in the ACM console is not thereby an Argo CD user. An app-admin who can sync `dev-project` in Argo CD is not thereby allowed to see every cluster on the hub.
-
-Argo CD policies use this form. The full example is in the appendix.
-
-```text
-p, <role>, <resource>, <action>, <project>/<object>, <allow or deny>
-g, <group>, <role>
+```bash
+oc auth can-i create multiclusterroleassignments.rbac.open-cluster-management.io -n site-virt --as=<user> --as-group=<group>
+oc auth can-i create policies.policy.open-cluster-management.io -n site-virt --as=<user> --as-group=<group>
+oc auth can-i create placements.cluster.open-cluster-management.io -n site-virt --as=<user> --as-group=<group>
+oc auth can-i create manifestworks.work.open-cluster-management.io -n <cluster-namespace> --as=<user> --as-group=<group>
+oc auth can-i create managedclustersets/bind.cluster.open-cluster-management.io --as=<user> --as-group=<group>
 ```
 
-Resources include `applications`, `applicationsets`, `clusters`, `repositories`, `projects`, `logs`, and `exec`. Actions include `get`, `create`, `update`, `delete`, `sync`, and `override`. Project roles and local project tokens live on the `AppProject`. System roles and the OIDC group map live in the ConfigMap.
+A `yes` on the first four, in a namespace bound to a cluster set, is spoke power.
 
-### ApplicationSets in the team namespace
+## Virtualization
 
-An ApplicationSet can live in any namespace you enable, not only in `openshift-gitops` or `argocd`. The team commits manifests in its own namespace. They do not need write access to the control-plane namespace.
-
-Enable both sides. The controller must watch the namespace, and the `AppProject` must list it. An Application outside the control plane is reconciled only when its namespace is in `spec.sourceNamespaces` of the project it names. Generated Applications are created in the same namespace as the ApplicationSet. Enable Application namespaces and ApplicationSet namespaces together, or the generated Applications sit unreconciled.
-
-On OpenShift GitOps, set `spec.sourceNamespaces` and `spec.applicationSet.sourceNamespaces` on the `ArgoCD` object. Upstream Argo CD sets `application.namespaces` and `applicationsetcontroller.namespaces` on `argocd-cmd-params-cm`. Applications in any namespace started in Argo CD 2.5. ApplicationSets in any namespace started in 2.8. Examples are in the appendix.
-
-| Pattern | How it works | Where rights are decided |
-| --- | --- | --- |
-| Spoke-local, developers stay on the cluster | The common case. No hub login. RBAC and the ApplicationSet, when there is one, live on the spoke. ACM controls and monitors. | Spoke RoleBindings |
-| Team namespace owns the ApplicationSet | Centralized. The group creates `ApplicationSet` and `Application` only in its namespace on the hub. The set uses an ACM `Placement` limited to that team's cluster set. | Namespace RBAC on the hub |
-| Generated Applications stay in that namespace | The ApplicationSet writes `Application` objects into the same namespace. | RBAC on `Application` there, plus the `AppProject` |
-| Hub push | The ApplicationSet runs on the hub and deploys to the spokes the `Placement` selected. | The GitOps or agent service account on the destination |
-
-Keep the control-plane namespace out of a tenant `AppProject`'s `sourceNamespaces`. A tenant project that can source the control plane can take over the instance.
-
-A cluster generator with an empty selector can see every cluster that Argo CD knows. Require a label selector, or restrict who may use the `clusters` resource in Argo CD RBAC. For pull-request and SCM generators, turn on strict token refs so a secret is usable only when it carries `argocd.argoproj.io/secret-type: scm-creds`.
-
-`open-cluster-management:subscription-admin` is the older hub role for Subscriptions that fan out from a channel. It is a different pattern. It does not grant the Argo CD UI, and it does not replace spoke namespace rights for the workload.
-
-### Who the spoke sees
-
-Creating an ApplicationSet does not make the developer an admin of the destination cluster. The spoke authorizes a service account.
-
-On a normal Argo CD install the control plane connects out to each cluster API. Argo CD 3.5 can impersonate a destination service account for UI and server operations, including logs, resource actions, and deletes, when `application.sync.impersonation.enabled` is `true`. That flag is off by default. The account comes from `AppProject.spec.destinationServiceAccounts`. The spoke audit log names that service account. It does not name the developer. This is a narrower account per project. It is still an account, which is the same class of problem as the default ACM service accounts: the audit name is the account, and the account's role is the ceiling for everyone who can trigger it.
-
-### Argo CD agent
-
-`argocd-agent` reverses the connection. The workload cluster dials the hub. The hub does not need a route to the spoke API. That fits NAT, firewalls, and large fleets.
-
-| | Push | Agent |
-| --- | --- | --- |
-| Connection | Hub opens the spoke API | Spoke agent opens a stream to the hub |
-| Spoke identity | Control-plane service account, or a `destinationServiceAccounts` account when impersonation is on | The agent service account |
-| Fits | A modest number of clusters on one network | Edge and large fleets, where the hub should not store every spoke admin credential |
-
-The agent has two modes. Managed mode runs a small agent. The hub renders manifests and streams them. Autonomous mode runs an application controller and repo server on the spoke, so that cluster keeps reconciling when the hub is unreachable, and reports status back.
-
-The agent resource proxy does not honor `destinationServiceAccounts`. On clusters that use the agent, logs, sync, and other cluster operations run as the agent's service account. The tenant boundary is the `AppProject`: source repositories, destination clusters and namespaces, and resource allow and deny lists. Kubernetes RBAC on the spoke does not see the developer.
-
-That is the default service-account problem again. The agent account is often broad, because it must apply what the hub asks. An app-admin who can sync an `AppProject` with a wide destination, or a developer who can point an ApplicationSet at that project, can make that account act. Scope the project. Scope the agent account. Do not treat "can open Argo CD" as "is that person on the spoke."
-
-Support for `destinationServiceAccounts` on the agent proxy is requested, not shipped. The same is true of one RBAC model that covers the ACM console and the Argo CD UI. Open work is listed in [Open RBAC items](open-rbac-items.md).
-
-## Pattern 4: RBAC for virtualization
-
-A hub role opens the console tab. Spoke roles allow the action, as the user, not as the work service account. Enable `fine-grained-rbac` before the `acm-vm-*` roles exist.
+A hub role opens the console tab. Spoke roles allow the action, as the user, not as the work service account.
 
 | Who | Hub | Each managed cluster |
 | --- | --- | --- |
@@ -239,98 +125,83 @@ A hub role opens the console tab. Spoke roles allow the action, as the user, not
 | VM administrator, not cluster-admin | `acm-vm-fleet:view` | `kubevirt.io:admin` and `acm-vm-extended:admin` |
 | Cross-cluster live migration | `acm-vm-fleet:admin` | On source and destination: `kubevirt.io:admin`, `acm-vm-extended:admin`, and cluster-scoped `acm-vm-cluster-migration:view` |
 
-`acm-vm-fleet:*` opens the Virtualization tab. It does not grant `virtualmachines` on a spoke. `kubevirt.io:admin` includes `HyperConverged` in `openshift-cnv`. It is not OpenShift `cluster-admin`.
+`kubevirt.io:admin` includes `HyperConverged` in `openshift-cnv`. It is not OpenShift `cluster-admin`.
 
 In-cluster migration panels still need `migrations.kubevirt.io:view`, `migrations.kubevirt.io:storagemigrate`, and `migrations.kubevirt.io:storagemigrate-multins` until those rules are folded into the extended roles. Confirm the name with `oc get clusterrole`. The console has shown an underscore (`storagemigrate_multins`). The product request uses a hyphen (`storagemigrate-multins`).
 
-OpenShift Virtualization aggregates `kubevirt.io:admin` into the namespace `admin` role unless you opt out. On 4.22, `spec.roleAggregationStrategy: Manual` is that opt-out, and it is Developer Preview. Set it only after the explicit bindings exist.
+OpenShift Virtualization aggregates `kubevirt.io:admin` into the namespace `admin` role unless you opt out. On 4.22, `spec.roleAggregationStrategy: Manual` is that opt-out, and it is Developer Preview. Set it only after the explicit bindings exist. Do not strip the aggregation labels.
 
 Do not bind the retired names `kubevirt.io-acm-managed:*` or `kubevirt.io-acm-hub:*`.
 
-## Pattern 5: RBAC for observability
+## Policies
+
+A policy creates and removes the spoke binding from one place. It cannot split two people who share a username, and it cannot edit a directory.
+
+Put the policy in a namespace whose placements only see the intended clusters, and only clusters where the ClusterRole exists. A second policy, placed only on `local-cluster`, binds the same group to the hub console role.
+
+`pruneObjectBehavior` is a field on the `ConfigurationPolicy`, not on the parent `Policy`. On the parent it is dropped. `DeleteIfCreated` removes an object the policy created when you delete that object from the policy. The appendix puts the field on the configuration policy.
+
+You can also enforce the `MulticlusterRoleAssignment` on the hub. The controller still creates the spoke bindings. The same people who may create a policy may grant spoke power. See the table above.
+
+Remove one person from the hub group to revoke them. Remove the binding from the policy to revoke the zone.
+
+## Observability
 
 Collectors should stay service accounts. The person querying must not borrow that identity.
 
 Today, what someone can query follows the clusters their cluster set role lets them see. Hub role setup is in [Secure clusters](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index), "Enabling RBAC for Observability."
 
-The planned direction is to scope queries with `MulticlusterRoleAssignment`. LogQL and PromQL enforcement on that assignment is not GA yet. There will not be a separate observability role API.
+Scoping queries with `MulticlusterRoleAssignment` is the planned direction. It is not generally available. Logs need a tighter rule than metrics. A metric is a number. A log line can contain tokens, audit events, and virtual-machine console output.
 
-Logs need a tighter rule than metrics. A metric is a number. A log line can contain tokens, audit events, and virtual-machine console output. Permission to graph a virtual machine is a different decision from permission to read its console.
+## Identity
 
-## Pattern 6: RBAC via ACM policies
+| Setup | When to use it |
+| --- | --- |
+| One identity provider on the hub and on the spokes. Bind groups. | People log in on both. The console and `oc login` then carry the same username and the same groups. |
+| Hub identity provider only. Spoke bindings use those group strings. No user provider on the spokes. | Direct spoke login is forbidden. The console still works. Keep a break-glass administrator. |
+| Zone-qualified groups such as `zonea-vm-admins`. | Two zones or two directories. An unqualified `AP001` binding would grant both people who share that short name. |
 
-A policy creates and removes the spoke binding from one place. It cannot split two people who share a username, and it cannot add anyone to a directory.
-
-Enforce the `ClusterRoleBinding` for the zone group. `pruneObjectBehavior: DeleteIfCreated` removes it when you delete it from the policy. Place the policy only on clusters in that set where the ClusterRole exists. A second policy, placed only on `local-cluster`, binds the same group to the hub console role.
-
-You can also enforce the `MulticlusterRoleAssignment` on the hub. The controller still creates the spoke bindings.
-
-Remove one person from the hub group to revoke them. Remove the binding from the policy to revoke the zone. The full policy is in the appendix.
-
-## Pattern 7: Admission control
-
-RBAC says who may call an API. It cannot say "update only this label." Gatekeeper or Kyverno on the cluster that owns the object decides that, after RBAC has allowed the request.
-
-| | Centralized grant | Admission control |
-| --- | --- | --- |
-| Declared | One `MulticlusterRoleAssignment` on the hub | A Gatekeeper or Kyverno policy on the cluster that owns the object |
-| Decided | Spoke binding for the person. Query scope for logs and metrics later. | On that cluster, after RBAC allows the call |
-| Answers | "May this group update namespaces on these clusters?" | "The only label they may add is `argocd.argoproj.io/managed-by`." |
-
-ACM can copy the admission policy out with a `ConfigurationPolicy`. The copy is central. The decision is not.
-
-**One label.** A namespace admin may change labels. Allow `argocd.argoproj.io/managed-by`, deny every other newly added label, skip namespaces whose name contains `openshift`, and skip usernames that start with `system:`. Template in the appendix.
-
-**Block direct login.** Gatekeeper does not see the login page. Login ends by creating an `oauth.openshift.io` token. A template can deny those tokens for human users. Exempt `system:` and `kube:admin` unless another break-glass path exists. Apply in `dryrun` first. Existing tokens keep working until they expire. Hub impersonation does not create these tokens, so the console path keeps working. Template in the appendix.
-
-## Identity setup
-
-Every pattern binds a name string. Use a consistent identity provider on the hub and on every spoke, and bind groups from that provider. A second provider can spell the same person's name differently, or give two people the same short name.
-
-| Setup | When to use it | What you get |
-| --- | --- | --- |
-| One identity provider on the hub and every spoke. Bind groups. | Use this. | The same person has the same username and the same groups everywhere. Remove them from the group to revoke access on the hub and on the spokes. |
-| Hub groups and spoke bindings. No user identity provider on the spokes. | Direct spoke login is forbidden. | The console works. `oc login` does not. Keep a break-glass administrator for when the hub is down. |
-| Zone-qualified groups such as `zonea-vm-admins` | Two zones, two directories. | An unqualified `AP001` binding would grant both people who share that name. |
-
-Do not create a ServiceAccount per hub user. That repeats the default problem: the audit name is an account, and the account's role is shared power. The console already impersonates the user and their groups.
+Removing the spoke provider does not stop the console path. Removing the hub provider does not stop direct spoke login.
 
 ## Checklist
 
-1. Decide which actions must stay on controller service accounts, and which actions must run as the person.
-2. Use one identity provider on the hub and the spokes. Agree the group names before you create bindings.
-3. Create the `ManagedClusterSet` and bind each team's group to `open-cluster-management:view:<set>` or `admin`.
-4. Enable `fine-grained-rbac` on the `MultiClusterHub` if you use virtualization roles.
-5. Grant hub console roles, for example `acm-vm-fleet:view`.
-6. Grant spoke permissions with one `MulticlusterRoleAssignment` per group. Leave `targetNamespaces` empty for a cluster-wide role. Add a namespace list only when the hub team can keep that list current.
-7. For applications, decide whether developers work only on the spokes. If they do, grant no hub login and no Argo CD role. Configure spoke RBAC, and use ACM to control and monitor. Open hub and Argo CD access only when the customer allows centralized access, and keep the control-plane namespace out of tenant `AppProject`s.
-8. Deliver bindings with ACM policies when you need rollout and removal from Git.
-9. Add admission policies, in `dryrun` first, only for rules RBAC cannot express.
-10. Check the spoke audit log. A person's click should show that person, not only `system:serviceaccount`.
+1. Keep controller actions on service accounts. Run a person's click as that person.
+2. Decide whether those people log in on the spokes. If they do, use one identity provider. If they do not, do not configure a user provider there.
+3. Bind each team's group to `open-cluster-management:managedclusterset:view:<set>`. Have a platform owner create the `ManagedClusterSetBinding` with the `bind` role.
+4. Keep create permission on `MulticlusterRoleAssignment`, `Policy`, `Placement`, and `ManifestWork` with the people who are allowed to grant spoke power.
+5. Enable `fine-grained-rbac` before using the virtualization roles.
+6. Grant spoke permissions with one `MulticlusterRoleAssignment` per group. Leave `targetNamespaces` empty unless the hub team can keep the list current.
+7. For applications, use the spoke-local path unless the customer allows centralized access. That path is in the [companion](apps-and-admission.md).
+8. On a spoke, confirm the grant:
+
+```bash
+oc auth can-i get virtualmachines.kubevirt.io -n team-a --as=<hub-username> --as-group=zonea-vm-admins
+```
+
+9. In the spoke audit log, confirm a console click has an `impersonatedUser`. A work-agent change should still show `system:serviceaccount`.
 
 ## Sources
 
 - [Secure clusters, ACM 2.17](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index)
 - [Fine-grained RBAC for virtual machines](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index#fine-grain-mca)
-- [ApplicationSets outside the control plane, OpenShift GitOps](https://docs.redhat.com/en/documentation/red_hat_openshift_gitops/1.21/html/argo_cd_application_sets/managing-app-sets-in-non-control-plane-namespaces)
-- [Application sync using impersonation](https://argo-cd.readthedocs.io/en/stable/operator-manual/app-sync-using-impersonation/)
+- [ManagedClusterSet](https://open-cluster-management.io/docs/concepts/cluster-inventory/managedclusterset/)
 
 ---
 
-# Appendix
-
 ## A. Enable fine-grained RBAC
+
+In ACM 2.16 and 2.17 the component is off by default. On the hub:
 
 ```bash
 oc patch mch multiclusterhub -n open-cluster-management --type=json \
-  -p='[{"op": "add", "path": "/spec/overrides/components/-", "value": {"name": "fine-grained-rbac", "enabled": true}}]'
+  -p='[{"op":"add","path":"/spec/overrides/components/-","value":{"name":"fine-grained-rbac","enabled":true}}]'
 ```
 
-If `fine-grained-rbac` is already listed, set that entry to `enabled: true`.
+If `fine-grained-rbac` is already in `spec.overrides.components`, set `enabled: true` on that entry. Do not append a second one.
 
 ## B. MulticlusterRoleAssignment, cluster-wide
 
-`targetNamespaces` is omitted, so the controller creates a `ClusterRoleBinding` on each selected cluster.
+Empty `targetNamespaces` is a `ClusterRoleBinding` on each selected cluster. Create this on the hub.
 
 ```yaml
 apiVersion: rbac.open-cluster-management.io/v1beta1
@@ -342,56 +213,49 @@ spec:
   subject:
     kind: Group
     name: zonea-vm-admins
-    apiGroup: rbac.authorization.k8s.io
+  placement:
+    name: remote-vm-sites
+    namespace: site-virt
   roleAssignments:
     - name: kubevirt-admin
       clusterRole: kubevirt.io:admin
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
+    - name: vm-extended-admin
+      clusterRole: acm-vm-extended:admin
 ```
 
-## C. MulticlusterRoleAssignment, namespace level
+## C. MulticlusterRoleAssignment, listed namespaces
 
-The controller creates a `RoleBinding` in each listed namespace, and nowhere else on the spoke.
+One `RoleBinding` in each named namespace. No access anywhere else.
 
 ```yaml
 apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
 metadata:
-  name: zonea-vm-namespace-admins
+  name: zonea-vm-admins-namespaces
   namespace: site-virt
 spec:
   subject:
     kind: Group
-    name: zonea-vm-namespace-admins
-    apiGroup: rbac.authorization.k8s.io
+    name: zonea-vm-admins
+  placement:
+    name: remote-vm-sites
+    namespace: site-virt
   roleAssignments:
     - name: kubevirt-admin
       clusterRole: kubevirt.io:admin
       targetNamespaces:
         - team-a-vms
         - team-b-vms
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
-    - name: extended-admin
+    - name: vm-extended-admin
       clusterRole: acm-vm-extended:admin
       targetNamespaces:
         - team-a-vms
         - team-b-vms
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
 ```
 
 ## D. Policy that enforces the spoke binding
+
+`pruneObjectBehavior` is on the `ConfigurationPolicy`. Create the policy, the placement, and the placement binding on the hub, in a namespace a platform owner controls.
 
 ```yaml
 apiVersion: policy.open-cluster-management.io/v1
@@ -402,7 +266,6 @@ metadata:
 spec:
   remediationAction: enforce
   disabled: false
-  pruneObjectBehavior: DeleteIfCreated
   policy-templates:
     - objectDefinition:
         apiVersion: policy.open-cluster-management.io/v1
@@ -412,6 +275,7 @@ spec:
         spec:
           remediationAction: enforce
           severity: high
+          pruneObjectBehavior: DeleteIfCreated
           object-templates:
             - complianceType: musthave
               objectDefinition:
@@ -459,206 +323,3 @@ subjects:
     kind: Policy
     name: zonea-vm-admins
 ```
-
-## E. Gatekeeper: one label on a namespace
-
-```yaml
-apiVersion: templates.gatekeeper.sh/v1beta1
-kind: ConstraintTemplate
-metadata:
-  name: k8snamespacelabel
-spec:
-  crd:
-    spec:
-      names:
-        kind: K8sNamespaceLabel
-  targets:
-    - target: admission.k8s.gatekeeper.sh
-      rego: |
-        package namespacelabel
-
-        violation[{"msg": msg}] {
-          input.review.operation == "UPDATE"
-          input.review.kind.kind == "Namespace"
-          not contains(lower(input.review.object.metadata.name), "openshift")
-          not startswith(input.review.userInfo.username, "system:")
-          added := { key |
-            input.review.object.metadata.labels[key]
-            not input.review.oldObject.metadata.labels[key]
-          }
-          count(added) > 0
-          label := added[_]
-          label != "argocd.argoproj.io/managed-by"
-          msg := sprintf("Added label '%v' is not allowed on namespace '%v'. Only 'argocd.argoproj.io/managed-by' is permitted.", [label, input.review.object.metadata.name])
-        }
----
-apiVersion: constraints.gatekeeper.sh/v1beta1
-kind: K8sNamespaceLabel
-metadata:
-  name: namespace-admin-one-label
-spec:
-  enforcementAction: dryrun
-  match:
-    kinds:
-      - apiGroups: [""]
-        kinds: ["Namespace"]
-```
-
-## F. Gatekeeper: block direct spoke login
-
-```yaml
-apiVersion: templates.gatekeeper.sh/v1beta1
-kind: ConstraintTemplate
-metadata:
-  name: k8sblockspokelogin
-spec:
-  crd:
-    spec:
-      names:
-        kind: K8sBlockSpokeLogin
-      validation:
-        openAPIV3Schema:
-          type: object
-          properties:
-            exemptUsers:
-              type: array
-              items:
-                type: string
-  targets:
-    - target: admission.k8s.gatekeeper.sh
-      rego: |
-        package k8sblockspokelogin
-
-        violation[{"msg": msg}] {
-          is_login_token
-          input.review.operation == "CREATE"
-          username := object.get(input.review.object, "userName", "")
-          not exempt(username)
-          msg := sprintf("direct spoke login is blocked for %q", [username])
-        }
-
-        violation[{"msg": msg}] {
-          input.review.kind.group == "config.openshift.io"
-          input.review.kind.kind == "OAuth"
-          input.review.operation != "DELETE"
-          incoming := count(providers(input.review.object))
-          incoming > count(providers(object.get(input.review, "oldObject", {})))
-          msg := "direct spoke login is blocked: do not add OAuth identityProviders"
-        }
-
-        is_login_token {
-          input.review.kind.group == "oauth.openshift.io"
-          input.review.kind.kind == "OAuthAccessToken"
-        }
-
-        is_login_token {
-          input.review.kind.group == "oauth.openshift.io"
-          input.review.kind.kind == "OAuthAuthorizeToken"
-        }
-
-        providers(obj) = result {
-          result := object.get(object.get(obj, "spec", {}), "identityProviders", [])
-        }
-
-        exempt(username) {
-          startswith(username, "system:")
-        }
-
-        exempt(username) {
-          exempt_users[_] == username
-        }
-
-        exempt_users[username] {
-          params := object.get(input, "parameters", {})
-          not object.get(params, "exemptUsers", false)
-          username := "kube:admin"
-        }
-
-        exempt_users[username] {
-          username := input.parameters.exemptUsers[_]
-        }
----
-apiVersion: constraints.gatekeeper.sh/v1beta1
-kind: K8sBlockSpokeLogin
-metadata:
-  name: block-spoke-login
-spec:
-  enforcementAction: dryrun
-  match:
-    kinds:
-      - apiGroups: ["oauth.openshift.io"]
-        kinds: ["OAuthAccessToken", "OAuthAuthorizeToken"]
-      - apiGroups: ["config.openshift.io"]
-        kinds: ["OAuth"]
-  parameters:
-    exemptUsers:
-      - kube:admin
-```
-
-## G. Argo CD for a team namespace
-
-OpenShift GitOps. List the team namespace for Applications and for ApplicationSets. Keep the `AppProject` in the control-plane namespace. Confirm glob and regex support on the GitOps version you run before you depend on a pattern such as `team-*`.
-
-```yaml
-apiVersion: argoproj.io/v1beta1
-kind: ArgoCD
-metadata:
-  name: openshift-gitops
-  namespace: openshift-gitops
-spec:
-  sourceNamespaces:
-    - team-a
-  applicationSet:
-    sourceNamespaces:
-      - team-a
-```
-
-The project allows Applications that live in `team-a`, and deploys only into the listed destinations. It does not list `openshift-gitops` under `sourceNamespaces`.
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: AppProject
-metadata:
-  name: dev-project
-  namespace: openshift-gitops
-spec:
-  sourceNamespaces:
-    - team-a
-  sourceRepos:
-    - https://github.com/my-org/team-a-apps
-  destinations:
-    - name: zone-a-cluster-1
-      namespace: team-a-workloads
-```
-
-Argo CD RBAC. The default role is empty. The developer group can read applications in `dev-project`. The app-admin group can read and sync them. Neither role gets `exec`.
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: argocd-rbac-cm
-  namespace: openshift-gitops
-data:
-  policy.default: ""
-  policy.csv: |
-    p, role:developer, applications, get, dev-project/*, allow
-    p, role:app-admin, applications, get, dev-project/*, allow
-    p, role:app-admin, applications, sync, dev-project/*, allow
-    g, engineering:developers, role:developer
-    g, engineering:app-admins, role:app-admin
-```
-
-On an upstream install the same namespace lists go on `argocd-cmd-params-cm` as `application.namespaces` and `applicationsetcontroller.namespaces`. Set `applicationsetcontroller.enable.tokenref.strict.mode` to `"true"` when pull-request or SCM generators reference secrets.
-
-Impersonation of a destination service account is off until you set `application.sync.impersonation.enabled` to `"true"` in `argocd-cm`. Then name the account on the project:
-
-```yaml
-spec:
-  destinationServiceAccounts:
-    - server: https://zone-a-cluster.example.com:6443
-      namespace: team-a-workloads
-      defaultServiceAccount: team-a-deployer
-```
-
-The agent resource proxy does not use this list. Clusters that run `argocd-agent` still apply changes as the agent service account.
