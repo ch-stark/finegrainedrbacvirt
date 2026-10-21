@@ -1,6 +1,6 @@
 # RBAC in ACM: the patterns you need
 
-ACM has two decisions, and they are not the same one.
+When you implement RBAC with ACM there are many options and this deep-drive blog tries to write them down.
 
 The **hub** decides what you see: which clusters, which console tabs, which queries. The **spoke** decides what you can do. A console click that returns `Forbidden` is usually a hub role without a matching spoke binding.
 
@@ -31,7 +31,7 @@ The console never asks the spoke identity provider. Configure that provider on t
 | `MulticlusterRoleAssignment` for OpenShift Virtualization | Generally available in ACM 2.16 and 2.17. The API is still `rbac.open-cluster-management.io/v1beta1`. Generally available means Red Hat supports this use. It does not mean the API has moved to `v1`. The `fine-grained-rbac` component on `MultiClusterHub` is off until you enable it. |
 | Log and metric scope through the same assignment | Not generally available. There will not be a second API. |
 | Applications and Argo CD | Partially separate product RBAC.  |
-| Admission control | Not ACM RBAC. Same companion file. |
+| Admission control | Not direct ACM RBAC but often related |
 
 ## Cluster sets
 
