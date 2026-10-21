@@ -10,7 +10,7 @@ Three ideas carry the guide:
 
 Present the sections through the checklist. The appendix is reference.
 
-## TL;DR
+## Overview
 
 1. **Default actions run as a service account.** The spoke audit log names that account, not the hub user. Anyone who can drive the account from the hub gets its rights on the spoke.
 2. **Two planes for people.** A hub role decides what you see. A spoke binding decides what you can do. You need both, and the group name must match.
