@@ -139,6 +139,8 @@ Put the policy in a namespace whose placements only see the intended clusters, a
 
 `pruneObjectBehavior` is a field on the `ConfigurationPolicy`, not on the parent `Policy`. On the parent it is dropped. `DeleteIfCreated` removes an object the policy created when you delete that object from the policy. The appendix puts the field on the configuration policy.
 
+Appendix D is the community sample for application namespaces. It creates the groups, the projects, and the bindings. Virtual machine roles stay on `MulticlusterRoleAssignment`.
+
 You can also enforce the `MulticlusterRoleAssignment` on the hub. The controller still creates the spoke bindings. The same people who may create a policy may grant spoke power. See the table above.
 
 Remove one person from the hub group to revoke them. Remove the binding from the policy to revoke the zone.
@@ -169,7 +171,7 @@ Removing the spoke provider does not stop the console path. Removing the hub pro
 4. Keep create permission on `MulticlusterRoleAssignment`, `Policy`, `Placement`, and `ManifestWork` with the people who are allowed to grant spoke power.
 5. Enable `fine-grained-rbac` before using the virtualization roles.
 6. Grant spoke permissions with one `MulticlusterRoleAssignment` per group. Leave `targetNamespaces` empty unless the hub team can keep the list current.
-7. For applications, use the spoke-local path unless the customer allows centralized access. 
+7. For applications, use the spoke-local path unless the customer allows centralized access. Appendix D is the centralized policy.
 8. On a spoke, confirm the grant:
 
 ```bash
@@ -183,6 +185,7 @@ oc auth can-i get virtualmachines.kubevirt.io -n team-a --as=<hub-username> --as
 - [Secure clusters, ACM 2.17](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index)
 - [Fine-grained RBAC for virtual machines](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index#fine-grain-mca)
 - [ManagedClusterSet](https://open-cluster-management.io/docs/concepts/cluster-inventory/managedclusterset/)
+- [Application workload RBAC sample](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/AC-Access-Control/policy-configure-appworkloads-rbac-sample.yaml)
 
 ---
 
@@ -251,56 +254,187 @@ spec:
         - team-b-vms
 ```
 
-## D. Policy that enforces the spoke binding
+## D. Policy for application workload RBAC
 
-`pruneObjectBehavior` is on the `ConfigurationPolicy`. Create the policy, the placement, and the placement binding on the hub, in a namespace a platform owner controls.
+This is the [community sample](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/AC-Access-Control/policy-configure-appworkloads-rbac-sample.yaml) for access to the applications on the managed clusters. ACM console roles stay on the hub.
+
+Two applications are running. Application X is in `project-x`. Application Y is in `project-y`.
+
+| Group | Binding |
+| --- | --- |
+| `SreAdminGrp` | `cluster-admin` on the cluster |
+| `AppX-AdminGrp` | `admin` in `project-x` |
+| `AppX-ViewGrp` | `view` in `project-x` |
+| `AppY-AdminGrp` | `admin` in `project-y` |
+| `AppY-ViewGrp` | `view` in `project-y` |
+
+Each group is created with `users` empty. Add people through the identity provider.
+
+`remediationAction` is `inform` on the policy and on the configuration policy. The parent value overrides the template. `inform` reports drift. Set both to `enforce` to create the objects. `pruneObjectBehavior: DeleteIfCreated` is on the `ConfigurationPolicy`. Removing an object from the policy then deletes it on the cluster.
+
+Create the namespace `app-workloads` on the hub, then the policy, the placement, and the placement binding there. A platform owner controls that namespace. Label a cluster `app-rbac: enabled` to bring it into scope. On each selected cluster, `SreAdminGrp` is `cluster-admin`.
 
 ```yaml
 apiVersion: policy.open-cluster-management.io/v1
 kind: Policy
 metadata:
-  name: zonea-vm-admins
-  namespace: open-cluster-management-global-set
+  name: policy-configure-appworkloads-rbac
+  namespace: app-workloads
+  annotations:
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+    policy.open-cluster-management.io/categories: AC Access Control
+    policy.open-cluster-management.io/controls: AC-3 Access Enforcement
 spec:
-  remediationAction: enforce
+  remediationAction: inform
   disabled: false
   policy-templates:
     - objectDefinition:
         apiVersion: policy.open-cluster-management.io/v1
         kind: ConfigurationPolicy
         metadata:
-          name: zonea-vm-admins-kubevirt
+          name: policy-configure-appworkloads-rbac-example
         spec:
-          remediationAction: enforce
+          remediationAction: inform
           severity: high
           pruneObjectBehavior: DeleteIfCreated
           object-templates:
             - complianceType: musthave
               objectDefinition:
-                apiVersion: rbac.authorization.k8s.io/v1
-                kind: ClusterRoleBinding
+                kind: Group
+                apiVersion: user.openshift.io/v1
                 metadata:
-                  name: zonea-vm-admins-kubevirt
-                roleRef:
-                  apiGroup: rbac.authorization.k8s.io
-                  kind: ClusterRole
-                  name: kubevirt.io:admin
+                  name: SreAdminGrp
+                users: null
+            - complianceType: musthave
+              objectDefinition:
+                kind: Group
+                apiVersion: user.openshift.io/v1
+                metadata:
+                  name: AppX-AdminGrp
+                users: null
+            - complianceType: musthave
+              objectDefinition:
+                kind: Group
+                apiVersion: user.openshift.io/v1
+                metadata:
+                  name: AppX-ViewGrp
+                users: null
+            - complianceType: musthave
+              objectDefinition:
+                kind: Group
+                apiVersion: user.openshift.io/v1
+                metadata:
+                  name: AppY-AdminGrp
+                users: null
+            - complianceType: musthave
+              objectDefinition:
+                kind: Group
+                apiVersion: user.openshift.io/v1
+                metadata:
+                  name: AppY-ViewGrp
+                users: null
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: v1
+                kind: Namespace
+                metadata:
+                  name: project-x
+                  labels:
+                    purpose: namespace-for-sample-AppX-artifacts
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: v1
+                kind: Namespace
+                metadata:
+                  name: project-y
+                  labels:
+                    purpose: namespace-for-sample-AppY-artifacts
+            - complianceType: musthave
+              objectDefinition:
+                kind: ClusterRoleBinding
+                apiVersion: rbac.authorization.k8s.io/v1
+                metadata:
+                  name: SreAdmin-Binding
                 subjects:
                   - kind: Group
                     apiGroup: rbac.authorization.k8s.io
-                    name: zonea-vm-admins
+                    name: SreAdminGrp
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: cluster-admin
+            - complianceType: musthave
+              objectDefinition:
+                kind: RoleBinding
+                apiVersion: rbac.authorization.k8s.io/v1
+                metadata:
+                  name: AppX-Admin-Binding
+                  namespace: project-x
+                subjects:
+                  - kind: Group
+                    apiGroup: rbac.authorization.k8s.io
+                    name: AppX-AdminGrp
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: admin
+            - complianceType: musthave
+              objectDefinition:
+                kind: RoleBinding
+                apiVersion: rbac.authorization.k8s.io/v1
+                metadata:
+                  name: AppX-View-Binding
+                  namespace: project-x
+                subjects:
+                  - kind: Group
+                    apiGroup: rbac.authorization.k8s.io
+                    name: AppX-ViewGrp
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: view
+            - complianceType: musthave
+              objectDefinition:
+                kind: RoleBinding
+                apiVersion: rbac.authorization.k8s.io/v1
+                metadata:
+                  name: AppY-Admin-Binding
+                  namespace: project-y
+                subjects:
+                  - kind: Group
+                    apiGroup: rbac.authorization.k8s.io
+                    name: AppY-AdminGrp
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: admin
+            - complianceType: musthave
+              objectDefinition:
+                kind: RoleBinding
+                apiVersion: rbac.authorization.k8s.io/v1
+                metadata:
+                  name: AppY-View-Binding
+                  namespace: project-y
+                subjects:
+                  - kind: Group
+                    apiGroup: rbac.authorization.k8s.io
+                    name: AppY-ViewGrp
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: view
 ---
 apiVersion: cluster.open-cluster-management.io/v1beta1
 kind: Placement
 metadata:
-  name: zonea-clusters
-  namespace: open-cluster-management-global-set
+  name: app-workload-clusters
+  namespace: app-workloads
 spec:
   predicates:
     - requiredClusterSelector:
         labelSelector:
           matchLabels:
-            zone: zonea
+            app-rbac: enabled
   tolerations:
     - key: cluster.open-cluster-management.io/unreachable
       operator: Equal
@@ -310,14 +444,14 @@ spec:
 apiVersion: policy.open-cluster-management.io/v1
 kind: PlacementBinding
 metadata:
-  name: zonea-vm-admins
-  namespace: open-cluster-management-global-set
+  name: policy-configure-appworkloads-rbac
+  namespace: app-workloads
 placementRef:
   apiGroup: cluster.open-cluster-management.io
   kind: Placement
-  name: zonea-clusters
+  name: app-workload-clusters
 subjects:
   - apiGroup: policy.open-cluster-management.io
     kind: Policy
-    name: zonea-vm-admins
+    name: policy-configure-appworkloads-rbac
 ```
