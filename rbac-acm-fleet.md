@@ -66,13 +66,13 @@ Goal: the people in group `zonea-vm-admins` may administer virtual machines on Z
 
 ## The patterns at a glance
 
-A real deployment combines several of these. Patterns 1 to 5 grant access to people. Pattern 6 rolls grants out. Pattern 7 limits a change that RBAC has already allowed. None of them replace the service accounts that controllers use for their own work.
+A real deployment combines several of these. Patterns 1, 2, 4, and 5 grant access to people. Pattern 3 often grants developers nothing on the hub: they work on the spokes, and ACM controls and monitors. Pattern 6 rolls grants out. Pattern 7 limits a change that RBAC has already allowed. None of them replace the service accounts that controllers use for their own work.
 
 | # | Pattern | Question it answers | Where it is enforced |
 | --- | --- | --- | --- |
 | 1 | Cluster set RBAC | Which clusters can this team see? | Hub |
 | 2 | `MulticlusterRoleAssignment` | Which group gets which role, on which clusters and namespaces? | Spoke bindings, created from the hub |
-| 3 | Application RBAC | Who may define applications, and where may they deploy? | Hub namespace, `AppProject`, and the identity on the spoke |
+| 3 | Application RBAC | Where do developers change applications? | Often on the spoke only, with spoke RBAC. ACM controls and monitors. Hub login and central Argo CD are optional, and many customers do not allow them. |
 | 4 | Virtualization RBAC | Who sees and manages virtual machines? | Hub console role plus spoke roles |
 | 5 | Observability RBAC | Who may query logs and metrics? | Cluster set roles today. Assignment scope is planned. |
 | 6 | ACM policies | How do bindings roll out and get removed? | Hub policy, object on the spoke |
@@ -113,25 +113,103 @@ Examples are in the appendix.
 
 ## Pattern 3: RBAC for applications
 
-Application RBAC is several patterns, not one ClusterRole. They share one property: an `ApplicationSet` can live in any namespace, not only in `openshift-gitops`.
+Many customers do not allow centralized access. Developers do not log in to the hub, and they do not open Argo CD there. RBAC is configured on the spokes. Developers work on their own clusters. ACM controls those clusters and monitors them: policy, lifecycle, and observability. The hub is the platform console, not the application console.
 
-Set up four things:
+| | Spoke-local, the common case | Centralized, only when the customer allows it |
+| --- | --- | --- |
+| Developer | Logs in to the spoke. Spoke RoleBindings decide what they can do. | Logs in to the hub, or to Argo CD on the hub. |
+| Where the app changes | On that cluster, as that person. The spoke audit log names them. | A GitOps or agent service account on the destination. |
+| What ACM is for | Control and monitoring, used by the platform team. | Also the place where the ApplicationSet and the Argo CD policy live. |
 
-- The GitOps instance must watch those namespaces (`sourceNamespaces`).
-- The group gets ordinary namespace RBAC on `Application` and `ApplicationSet` in the team namespace.
-- An `AppProject` limits destination clusters and namespaces.
-- Cluster set `view` is still required, so the `Placement` inside the ApplicationSet can see clusters.
+In the spoke-local case, grant developers no cluster set role, no hub namespace, and no Argo CD role. Put their RoleBindings on the spoke. ACM can still deliver those bindings with a policy. The binding is enforced where the developer works.
 
-Creating an ApplicationSet does not make the user an admin of the destination cluster. On the spoke, the API call is the GitOps service account, unless you also granted that group a spoke role with `MulticlusterRoleAssignment`. The GitOps account is one of the service accounts from the default model. Scope it, and do not treat "can edit the ApplicationSet" as "can do anything on the spoke."
+The rest of this pattern is the centralized case. Open it only for a customer who wants developers or app-admins on the hub. ACM RBAC and Argo CD RBAC stay independent there. A cluster set role does not open Argo CD. An Argo CD role does not grant a cluster set. Answer three questions before you open either door:
+
+1. Who may log in to the hub, and which clusters may they see?
+2. Who may open Argo CD on the hub?
+3. Which account performs the change on the managed cluster?
+
+### Who may access the hub
+
+When centralized access is allowed, a developer and an app-admin may log in to the hub. Give them their cluster set. Keep hub `cluster-admin` for the platform owners. When it is not allowed, this table does not apply: those people have no hub grant.
+
+| Person | Hub grant | What that grant allows |
+| --- | --- | --- |
+| Developer | `open-cluster-management:view:zone-a`, plus create and update on `Application` and `ApplicationSet` in the team namespace | The ACM console lists Zone A. A `Placement` in that namespace can select those clusters. They can commit the ApplicationSet in their namespace. |
+| App-admin | The same cluster set `view` | The same cluster list in the ACM console. Argo CD rights are a separate grant, below. They are still not hub `cluster-admin`. |
+| Platform owner | `open-cluster-management-global-set`, and admin on the GitOps control-plane namespace | Every cluster, and the Argo CD installation itself. |
+
+Cluster set `view` shows clusters. It does not create Applications, open the Argo CD UI, or grant rights on a spoke. Hub access is still powerful: a hub role that can submit work can drive the service accounts from the start of this guide. Keep the developer and the app-admin inside their set and their namespace.
+
+### Who may open Argo CD on the hub
+
+A developer is allowed into the Argo CD UI only when Argo CD's own policy says so.
+
+If Argo CD trusts the same identity provider as the hub, that developer can reach the Argo CD login. After login, Argo CD ignores ACM cluster sets and ACM fine-grained RBAC. It allows the request only when `argocd-rbac-cm` (or `spec.rbac` on the OpenShift GitOps `ArgoCD` object) maps their group to a role, and the `AppProject` allows that role.
+
+Leave `policy.default` empty. `policy.default: role:readonly` gives every authenticated Argo CD user read access to every project. Map groups explicitly:
+
+| Person | Argo CD role | Typical policy |
+| --- | --- | --- |
+| Developer | No Argo CD role, unless they must use the UI | Prefer Kubernetes RBAC on the team namespace, so they edit the ApplicationSet without the UI. If they need the UI, grant `applications` `get` on `dev-project/*` only. |
+| App-admin | Project role | `get` and `sync` on that project's applications. Leave `exec` and `override` off. |
+| Platform owner | `role:admin` | The control plane, cluster secrets, and project definitions. |
+
+A developer who can see Zone A in the ACM console is not thereby an Argo CD user. An app-admin who can sync `dev-project` in Argo CD is not thereby allowed to see every cluster on the hub.
+
+Argo CD policies use this form. The full example is in the appendix.
+
+```text
+p, <role>, <resource>, <action>, <project>/<object>, <allow or deny>
+g, <group>, <role>
+```
+
+Resources include `applications`, `applicationsets`, `clusters`, `repositories`, `projects`, `logs`, and `exec`. Actions include `get`, `create`, `update`, `delete`, `sync`, and `override`. Project roles and local project tokens live on the `AppProject`. System roles and the OIDC group map live in the ConfigMap.
+
+### ApplicationSets in the team namespace
+
+An ApplicationSet can live in any namespace you enable, not only in `openshift-gitops` or `argocd`. The team commits manifests in its own namespace. They do not need write access to the control-plane namespace.
+
+Enable both sides. The controller must watch the namespace, and the `AppProject` must list it. An Application outside the control plane is reconciled only when its namespace is in `spec.sourceNamespaces` of the project it names. Generated Applications are created in the same namespace as the ApplicationSet. Enable Application namespaces and ApplicationSet namespaces together, or the generated Applications sit unreconciled.
+
+On OpenShift GitOps, set `spec.sourceNamespaces` and `spec.applicationSet.sourceNamespaces` on the `ArgoCD` object. Upstream Argo CD sets `application.namespaces` and `applicationsetcontroller.namespaces` on `argocd-cmd-params-cm`. Applications in any namespace started in Argo CD 2.5. ApplicationSets in any namespace started in 2.8. Examples are in the appendix.
 
 | Pattern | How it works | Where rights are decided |
 | --- | --- | --- |
-| Team namespace owns the ApplicationSet | The group creates `ApplicationSet` and `Application` only in its namespace. The set uses an ACM `Placement` limited to that team's cluster set. | Namespace RBAC on the hub |
+| Spoke-local, developers stay on the cluster | The common case. No hub login. RBAC and the ApplicationSet, when there is one, live on the spoke. ACM controls and monitors. | Spoke RoleBindings |
+| Team namespace owns the ApplicationSet | Centralized. The group creates `ApplicationSet` and `Application` only in its namespace on the hub. The set uses an ACM `Placement` limited to that team's cluster set. | Namespace RBAC on the hub |
 | Generated Applications stay in that namespace | The ApplicationSet writes `Application` objects into the same namespace. | RBAC on `Application` there, plus the `AppProject` |
-| Hub push | The ApplicationSet runs on the hub and deploys to the spokes the `Placement` selected. | GitOps identity on the destination, plus any `MulticlusterRoleAssignment` |
-| Spoke-local ApplicationSet | The ApplicationSet runs on the managed cluster. | Local RBAC on the spoke |
+| Hub push | The ApplicationSet runs on the hub and deploys to the spokes the `Placement` selected. | The GitOps or agent service account on the destination |
 
-`open-cluster-management:subscription-admin` is the older hub role for Subscriptions that fan out from a channel. It does not replace spoke namespace rights for the workload.
+Keep the control-plane namespace out of a tenant `AppProject`'s `sourceNamespaces`. A tenant project that can source the control plane can take over the instance.
+
+A cluster generator with an empty selector can see every cluster that Argo CD knows. Require a label selector, or restrict who may use the `clusters` resource in Argo CD RBAC. For pull-request and SCM generators, turn on strict token refs so a secret is usable only when it carries `argocd.argoproj.io/secret-type: scm-creds`.
+
+`open-cluster-management:subscription-admin` is the older hub role for Subscriptions that fan out from a channel. It is a different pattern. It does not grant the Argo CD UI, and it does not replace spoke namespace rights for the workload.
+
+### Who the spoke sees
+
+Creating an ApplicationSet does not make the developer an admin of the destination cluster. The spoke authorizes a service account.
+
+On a normal Argo CD install the control plane connects out to each cluster API. Argo CD 3.5 can impersonate a destination service account for UI and server operations, including logs, resource actions, and deletes, when `application.sync.impersonation.enabled` is `true`. That flag is off by default. The account comes from `AppProject.spec.destinationServiceAccounts`. The spoke audit log names that service account. It does not name the developer. This is a narrower account per project. It is still an account, which is the same class of problem as the default ACM service accounts: the audit name is the account, and the account's role is the ceiling for everyone who can trigger it.
+
+### Argo CD agent
+
+`argocd-agent` reverses the connection. The workload cluster dials the hub. The hub does not need a route to the spoke API. That fits NAT, firewalls, and large fleets.
+
+| | Push | Agent |
+| --- | --- | --- |
+| Connection | Hub opens the spoke API | Spoke agent opens a stream to the hub |
+| Spoke identity | Control-plane service account, or a `destinationServiceAccounts` account when impersonation is on | The agent service account |
+| Fits | A modest number of clusters on one network | Edge and large fleets, where the hub should not store every spoke admin credential |
+
+The agent has two modes. Managed mode runs a small agent. The hub renders manifests and streams them. Autonomous mode runs an application controller and repo server on the spoke, so that cluster keeps reconciling when the hub is unreachable, and reports status back.
+
+The agent resource proxy does not honor `destinationServiceAccounts`. On clusters that use the agent, logs, sync, and other cluster operations run as the agent's service account. The tenant boundary is the `AppProject`: source repositories, destination clusters and namespaces, and resource allow and deny lists. Kubernetes RBAC on the spoke does not see the developer.
+
+That is the default service-account problem again. The agent account is often broad, because it must apply what the hub asks. An app-admin who can sync an `AppProject` with a wide destination, or a developer who can point an ApplicationSet at that project, can make that account act. Scope the project. Scope the agent account. Do not treat "can open Argo CD" as "is that person on the spoke."
+
+Support for `destinationServiceAccounts` on the agent proxy is requested, not shipped. The same is true of one RBAC model that covers the ACM console and the Argo CD UI. The items that track this are [ACM-32299](https://redhat.atlassian.net/browse/ACM-32299), RFE-9684, RFE-10027, RFE-9986, and argocd-agent issue 1152.
 
 ## Pattern 4: RBAC for virtualization
 
@@ -207,7 +285,7 @@ Do not create a ServiceAccount per hub user. That repeats the default problem: t
 4. Enable `fine-grained-rbac` on the `MultiClusterHub` if you use virtualization roles.
 5. Grant hub console roles, for example `acm-vm-fleet:view`.
 6. Grant spoke permissions with one `MulticlusterRoleAssignment` per group.
-7. Set up application namespaces, `AppProject` objects, and GitOps `sourceNamespaces` where teams deploy.
+7. For applications, decide whether developers work only on the spokes. If they do, grant no hub login and no Argo CD role. Configure spoke RBAC, and use ACM to control and monitor. Open hub and Argo CD access only when the customer allows centralized access, and keep the control-plane namespace out of tenant `AppProject`s.
 8. Deliver bindings with ACM policies when you need rollout and removal from Git.
 9. Add admission policies, in `dryrun` first, only for rules RBAC cannot express.
 10. Check the spoke audit log. A person's click should show that person, not only `system:serviceaccount`.
@@ -216,6 +294,8 @@ Do not create a ServiceAccount per hub user. That repeats the default problem: t
 
 - [Secure clusters, ACM 2.17](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index)
 - [Fine-grained RBAC for virtual machines](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index#fine-grain-mca)
+- [ApplicationSets outside the control plane, OpenShift GitOps](https://docs.redhat.com/en/documentation/red_hat_openshift_gitops/1.21/html/argo_cd_application_sets/managing-app-sets-in-non-control-plane-namespaces)
+- [Application sync using impersonation](https://argo-cd.readthedocs.io/en/stable/operator-manual/app-sync-using-impersonation/)
 
 ---
 
@@ -496,3 +576,71 @@ spec:
     exemptUsers:
       - kube:admin
 ```
+
+## G. Argo CD for a team namespace
+
+OpenShift GitOps. List the team namespace for Applications and for ApplicationSets. Keep the `AppProject` in the control-plane namespace. Confirm glob and regex support on the GitOps version you run before you depend on a pattern such as `team-*`.
+
+```yaml
+apiVersion: argoproj.io/v1beta1
+kind: ArgoCD
+metadata:
+  name: openshift-gitops
+  namespace: openshift-gitops
+spec:
+  sourceNamespaces:
+    - team-a
+  applicationSet:
+    sourceNamespaces:
+      - team-a
+```
+
+The project allows Applications that live in `team-a`, and deploys only into the listed destinations. It does not list `openshift-gitops` under `sourceNamespaces`.
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dev-project
+  namespace: openshift-gitops
+spec:
+  sourceNamespaces:
+    - team-a
+  sourceRepos:
+    - https://github.com/my-org/team-a-apps
+  destinations:
+    - name: zone-a-cluster-1
+      namespace: team-a-workloads
+```
+
+Argo CD RBAC. The default role is empty. The developer group can read applications in `dev-project`. The app-admin group can read and sync them. Neither role gets `exec`.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: openshift-gitops
+data:
+  policy.default: ""
+  policy.csv: |
+    p, role:developer, applications, get, dev-project/*, allow
+    p, role:app-admin, applications, get, dev-project/*, allow
+    p, role:app-admin, applications, sync, dev-project/*, allow
+    g, engineering:developers, role:developer
+    g, engineering:app-admins, role:app-admin
+```
+
+On an upstream install the same namespace lists go on `argocd-cmd-params-cm` as `application.namespaces` and `applicationsetcontroller.namespaces`. Set `applicationsetcontroller.enable.tokenref.strict.mode` to `"true"` when pull-request or SCM generators reference secrets.
+
+Impersonation of a destination service account is off until you set `application.sync.impersonation.enabled` to `"true"` in `argocd-cm`. Then name the account on the project:
+
+```yaml
+spec:
+  destinationServiceAccounts:
+    - server: https://zone-a-cluster.example.com:6443
+      namespace: team-a-workloads
+      defaultServiceAccount: team-a-deployer
+```
+
+The agent resource proxy does not use this list. Clusters that run `argocd-agent` still apply changes as the agent service account.
