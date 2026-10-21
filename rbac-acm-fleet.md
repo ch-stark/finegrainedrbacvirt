@@ -227,7 +227,7 @@ The agent resource proxy does not honor `destinationServiceAccounts`. On cluster
 
 That is the default service-account problem again. The agent account is often broad, because it must apply what the hub asks. An app-admin who can sync an `AppProject` with a wide destination, or a developer who can point an ApplicationSet at that project, can make that account act. Scope the project. Scope the agent account. Do not treat "can open Argo CD" as "is that person on the spoke."
 
-Support for `destinationServiceAccounts` on the agent proxy is requested, not shipped. The same is true of one RBAC model that covers the ACM console and the Argo CD UI. The items that track this are [ACM-32299](https://redhat.atlassian.net/browse/ACM-32299), RFE-9684, RFE-10027, RFE-9986, and argocd-agent issue 1152.
+Support for `destinationServiceAccounts` on the agent proxy is requested, not shipped. The same is true of one RBAC model that covers the ACM console and the Argo CD UI. Open work is listed in [Open RBAC items](open-rbac-items.md).
 
 ## Pattern 4: RBAC for virtualization
 
@@ -241,7 +241,7 @@ A hub role opens the console tab. Spoke roles allow the action, as the user, not
 
 `acm-vm-fleet:*` opens the Virtualization tab. It does not grant `virtualmachines` on a spoke. `kubevirt.io:admin` includes `HyperConverged` in `openshift-cnv`. It is not OpenShift `cluster-admin`.
 
-In-cluster migration panels still need `migrations.kubevirt.io:view`, `migrations.kubevirt.io:storagemigrate`, and `migrations.kubevirt.io:storagemigrate-multins` until those rules are folded into the extended roles. Confirm the name with `oc get clusterrole`. The console has shown an underscore (`storagemigrate_multins`). [ACM-47215](https://redhat.atlassian.net/browse/ACM-47215) uses a hyphen.
+In-cluster migration panels still need `migrations.kubevirt.io:view`, `migrations.kubevirt.io:storagemigrate`, and `migrations.kubevirt.io:storagemigrate-multins` until those rules are folded into the extended roles. Confirm the name with `oc get clusterrole`. The console has shown an underscore (`storagemigrate_multins`). The product request uses a hyphen (`storagemigrate-multins`).
 
 OpenShift Virtualization aggregates `kubevirt.io:admin` into the namespace `admin` role unless you opt out. On 4.22, `spec.roleAggregationStrategy: Manual` is that opt-out, and it is Developer Preview. Set it only after the explicit bindings exist.
 
