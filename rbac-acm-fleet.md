@@ -169,7 +169,7 @@ Removing the spoke provider does not stop the console path. Removing the hub pro
 4. Keep create permission on `MulticlusterRoleAssignment`, `Policy`, `Placement`, and `ManifestWork` with the people who are allowed to grant spoke power.
 5. Enable `fine-grained-rbac` before using the virtualization roles.
 6. Grant spoke permissions with one `MulticlusterRoleAssignment` per group. Leave `targetNamespaces` empty unless the hub team can keep the list current.
-7. For applications, use the spoke-local path unless the customer allows centralized access. That path is in the [companion](apps-and-admission.md).
+7. For applications, use the spoke-local path unless the customer allows centralized access. 
 8. On a spoke, confirm the grant:
 
 ```bash
