@@ -71,7 +71,7 @@ A real deployment combines several of these. Patterns 1, 2, 4, and 5 grant acces
 | # | Pattern | Question it answers | Where it is enforced |
 | --- | --- | --- | --- |
 | 1 | Cluster set RBAC | Which clusters can this team see? | Hub |
-| 2 | `MulticlusterRoleAssignment` | Which group gets which role, on which clusters and namespaces? | Spoke bindings, created from the hub |
+| 2 | `MulticlusterRoleAssignment` | Which group gets which role, on which clusters and namespaces? | Spoke bindings, created from the hub. A namespace list is harder to own than one cluster-wide binding. |
 | 3 | Application RBAC | Where do developers change applications? | Often on the spoke only, with spoke RBAC. ACM controls and monitors. Hub login and central Argo CD are optional, and many customers do not allow them. |
 | 4 | Virtualization RBAC | Who sees and manages virtual machines? | Hub console role plus spoke roles |
 | 5 | Observability RBAC | Who may query logs and metrics? | Cluster set roles today. Assignment scope is planned. |
@@ -107,6 +107,20 @@ Logging and metrics will not get a second RBAC API. Until they ship, only the Op
 
 Leave `targetNamespaces` empty for a cluster-wide `ClusterRoleBinding`. Set it to create a `RoleBinding` only in the listed namespaces. A namespace-level assignment grants nothing in `openshift-cnv` or in any project that is not listed.
 
+### Namespace-level RBAC from the hub
+
+Namespace-level RBAC is more complex when you work from a centralized place.
+
+On the spoke, someone creates one RoleBinding in a namespace that already exists on that cluster. From the hub, `targetNamespaces` is the list of those namespaces. The controller creates a RoleBinding in each listed namespace, on each cluster the Placement selects. An empty list is the simple centralized grant: one cluster-wide ClusterRoleBinding. A filled list is the complex grant.
+
+- A new namespace on one spoke does not update the hub object. Someone has to add the name.
+- Clusters in one Placement often use different project names. The same list then misses a project on one cluster and names a project that does not exist on another.
+- The grant applies only to names on the list. For virtualization, that excludes `openshift-cnv` and any project left off the list.
+- A long list, repeated across clusters, merges into one `ClusterPermission` and can hit the ManifestWork size limit. Keep one assignment per group, and keep the list short. The namespace example is in the appendix.
+- Centralized applications add more lists that have to match: the team namespace, the GitOps `sourceNamespaces`, the AppProject `sourceNamespaces`, and the destination namespace. Miss one and the Application is not reconciled, or it lands in the wrong place.
+
+Spoke-local RBAC stays one binding in the namespace the developer is already using. Take on the hub list when a platform team must roll that same namespace grant out, and is ready to own the list.
+
 The ClusterRole must already exist on the managed cluster. The `Placement` must exist first and should select only clusters in the right set. Prefer one assignment per group, with several `roleAssignments`, not one object per user. Many assignments for the same clusters merge into one `ClusterPermission` and can hit the ManifestWork size limit.
 
 Examples are in the appendix.
@@ -122,6 +136,8 @@ Many customers do not allow centralized access. Developers do not log in to the 
 | What ACM is for | Control and monitoring, used by the platform team. | Also the place where the ApplicationSet and the Argo CD policy live. |
 
 In the spoke-local case, grant developers no cluster set role, no hub namespace, and no Argo CD role. Put their RoleBindings on the spoke. ACM can still deliver those bindings with a policy. The binding is enforced where the developer works.
+
+Namespace-level RBAC is the part that gets harder if you move that work to the hub. A cluster-wide role is one binding. A per-project role becomes a list of namespaces on every selected cluster, and the hub has to keep that list current. Pattern 2 spells that out.
 
 The rest of this pattern is the centralized case. Open it only for a customer who wants developers or app-admins on the hub. ACM RBAC and Argo CD RBAC stay independent there. A cluster set role does not open Argo CD. An Argo CD role does not grant a cluster set. Answer three questions before you open either door:
 
@@ -284,7 +300,7 @@ Do not create a ServiceAccount per hub user. That repeats the default problem: t
 3. Create the `ManagedClusterSet` and bind each team's group to `open-cluster-management:view:<set>` or `admin`.
 4. Enable `fine-grained-rbac` on the `MultiClusterHub` if you use virtualization roles.
 5. Grant hub console roles, for example `acm-vm-fleet:view`.
-6. Grant spoke permissions with one `MulticlusterRoleAssignment` per group.
+6. Grant spoke permissions with one `MulticlusterRoleAssignment` per group. Leave `targetNamespaces` empty for a cluster-wide role. Add a namespace list only when the hub team can keep that list current.
 7. For applications, decide whether developers work only on the spokes. If they do, grant no hub login and no Argo CD role. Configure spoke RBAC, and use ACM to control and monitor. Open hub and Argo CD access only when the customer allows centralized access, and keep the control-plane namespace out of tenant `AppProject`s.
 8. Deliver bindings with ACM policies when you need rollout and removal from Git.
 9. Add admission policies, in `dryrun` first, only for rules RBAC cannot express.
