@@ -13,7 +13,7 @@ Present the sections through the checklist. The appendix is reference.
 ## Overview
 
 1. **Default actions run as a service account.** The spoke audit log names that account, not the hub user. Anyone who can drive the account from the hub gets its rights on the spoke.
-2. **Two planes for people.** A hub role decides what you see. A spoke binding decides what you can do. You need both, and the group name must match.
+2. **Two planes, one identity provider.** A hub role decides what you see. A spoke binding decides what you can do. Use the same identity provider on the hub and the spokes, so the group name matches.
 3. **Cluster sets control visibility.** A `ManagedClusterSet` is the set of clusters a team may see and target.
 4. **`MulticlusterRoleAssignment` is the central grant for people.** One object on the hub says who gets which role, on which clusters, in which namespaces.
 5. There are edge cases. **RBAC cannot say "only this field."** For a rule such as "a namespace admin may add only one label," use admission control on the cluster that owns the object.
@@ -49,15 +49,17 @@ flowchart LR
 
 The hub role fills the list. Opening the object still fails when the spoke has no binding for the same group. The hub must be self-managed (`local-cluster`).
 
-Direct login is the other path. The spoke identity provider authenticates the user, then the spoke bindings apply. The console path never asks the spoke directory. Because only the name string matters, `AP001` on the hub and `AP001` on the spoke share every binding that names `AP001`.
+Direct login is the other path. The spoke identity provider authenticates the user, then the spoke bindings apply. The console path never asks the spoke directory. Because only the name string matters, `AP001` on the hub and `AP001` on the spoke share every binding that names `AP001`. Use one identity provider on the hub and the spokes so those strings belong to the same person.
 
 ## Worked example: Zone A virtual machine admins
 
 Goal: the people in group `zonea-vm-admins` may administer virtual machines on Zone A clusters, without being cluster-admin, and without using a spoke service account.
 
+Use a consistent identity provider on the hub and on every Zone A spoke. ACM matches the username and the group name. It does not translate one directory into another. Configure the same provider, and the same group claim, on the hub and on each managed cluster. The console impersonates the hub user and the hub groups. The spoke allows the action when a binding names that same group string.
+
 | Step | Where | What |
 | --- | --- | --- |
-| 1 | Identity provider | Put the people in group `zonea-vm-admins`. |
+| 1 | Shared identity provider | Configure that provider on the hub and on each Zone A spoke. Put the people in group `zonea-vm-admins`. |
 | 2 | Hub | Give the group cluster set `view` for Zone A, and `acm-vm-fleet:view`, so the clusters and the Virtualization tab appear. |
 | 3 | Spokes | One `MulticlusterRoleAssignment` for that group, with `kubevirt.io:admin` and `acm-vm-extended:admin`, placed on the Zone A clusters. |
 | 4 | Revoke | Remove a person from the group. The bindings stay. |
@@ -283,11 +285,11 @@ ACM can copy the admission policy out with a `ConfigurationPolicy`. The copy is 
 
 ## Identity setup
 
-Every pattern binds a name string. Decide where the names come from before you create assignments.
+Every pattern binds a name string. Use a consistent identity provider on the hub and on every spoke, and bind groups from that provider. A second provider can spell the same person's name differently, or give two people the same short name.
 
 | Setup | When to use it | What you get |
 | --- | --- | --- |
-| One identity provider on the hub and every spoke. Bind groups. | The default for people. | The same person has the same username everywhere. Remove them from the group to revoke access. |
+| One identity provider on the hub and every spoke. Bind groups. | Use this. | The same person has the same username and the same groups everywhere. Remove them from the group to revoke access on the hub and on the spokes. |
 | Hub groups and spoke bindings. No user identity provider on the spokes. | Direct spoke login is forbidden. | The console works. `oc login` does not. Keep a break-glass administrator for when the hub is down. |
 | Zone-qualified groups such as `zonea-vm-admins` | Two zones, two directories. | An unqualified `AP001` binding would grant both people who share that name. |
 
@@ -296,7 +298,7 @@ Do not create a ServiceAccount per hub user. That repeats the default problem: t
 ## Checklist
 
 1. Decide which actions must stay on controller service accounts, and which actions must run as the person.
-2. Pick the identity setup and agree on group names.
+2. Use one identity provider on the hub and the spokes. Agree the group names before you create bindings.
 3. Create the `ManagedClusterSet` and bind each team's group to `open-cluster-management:view:<set>` or `admin`.
 4. Enable `fine-grained-rbac` on the `MultiClusterHub` if you use virtualization roles.
 5. Grant hub console roles, for example `acm-vm-fleet:view`.
