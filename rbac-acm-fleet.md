@@ -6,8 +6,6 @@ The **hub** decides what you see: which clusters, which console tabs, which quer
 
 Controllers keep service accounts. People should be impersonated. The hub user and the hub groups are what the spoke should see in the audit log.
 
-Open work that used to sit in this text is listed in [Open RBAC items](https://github.com/ch-stark/finegrainedrbacvirt/blob/main/open-rbac-items.md).
-
 ## The model
 
 | | Hub | Spoke |
