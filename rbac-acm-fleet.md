@@ -16,9 +16,7 @@ Present the sections through the checklist. The appendix is reference.
 2. **Two planes for people.** A hub role decides what you see. A spoke binding decides what you can do. You need both, and the group name must match.
 3. **Cluster sets control visibility.** A `ManagedClusterSet` is the set of clusters a team may see and target.
 4. **`MulticlusterRoleAssignment` is the central grant for people.** One object on the hub says who gets which role, on which clusters, in which namespaces.
-5. **RBAC cannot say "only this field."** For a rule such as "a namespace admin may add only one label," use admission control on the cluster that owns the object.
-
-**If you only do one thing:** stop handing people the addon and work service accounts. Use one central identity provider, bind groups on both planes, and name groups per zone or team (for example `zonea-vm-admins`).
+5. There are edge cases. **RBAC cannot say "only this field."** For a rule such as "a namespace admin may add only one label," use admission control on the cluster that owns the object.
 
 ## The default: service accounts on the spoke
 
@@ -32,7 +30,9 @@ That design has three problems.
 
 **Hub access becomes spoke power.** A person who can submit work from the hub, or who can use a hub role that talks to those agents, can make a privileged spoke service account act. The accounts often hold broad rights, because they must apply whatever the hub sends. Access to the hub is then access to those rights on the spoke.
 
-Controllers should keep their service accounts. People should not use them. The console path in the rest of this guide impersonates the logged-in user, and a binding on the spoke limits that user. The spoke audit log can name the person (`impersonatedUser`) instead of only the agent.
+Controllers should keep their service accounts. 
+
+People should not use them. The console path in the rest of this guide impersonates the logged-in user, and a binding on the spoke limits that user. The spoke audit log can name the person (`impersonatedUser`) instead of only the agent.
 
 ## How a console click is authorized
 
