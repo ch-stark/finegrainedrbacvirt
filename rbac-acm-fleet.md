@@ -31,7 +31,7 @@ The console never asks the spoke identity provider. Configure that provider on t
 | `MulticlusterRoleAssignment` for OpenShift Virtualization | Generally available in ACM 2.16 and 2.17. The API is still `rbac.open-cluster-management.io/v1beta1`. Generally available means Red Hat supports this use. It does not mean the API has moved to `v1`. The `fine-grained-rbac` component on `MultiClusterHub` is off until you enable it. |
 | Log and metric scope through the same assignment | Not generally available. There will not be a second API. |
 | Applications and Argo CD | Partially separate product RBAC but needs to fit together.  |
-| Admission control | Not direct ACM RBAC but often related |
+| Admission control | Not ACM RBAC. Appendix E is a Gatekeeper example that allows one namespace label. |
 
 ## Cluster sets
 
@@ -145,6 +145,16 @@ You can also enforce the `MulticlusterRoleAssignment` on the hub. The controller
 
 Remove one person from the hub group to revoke them. Remove the binding from the policy to revoke the zone.
 
+## Admission
+
+A role can allow an update and still be too wide. RBAC decides that this person may update the namespace. It does not decide which label they may add.
+
+The namespace admin may add `argocd.argoproj.io/managed-by`. Gatekeeper denies any other new label key. A namespace whose name contains `openshift` is out of scope. A user whose name starts with `system:` is out of scope, so a controller can still set labels.
+
+The rule compares keys. A key that is present now and was absent before is a new label. A changed value, or a removed key, is not what this rule checks.
+
+Appendix E is the constraint. Gatekeeper must already be installed on the cluster. Apply the template first. The constraint kind does not exist until the template is established. An ACM policy can ship both. On that policy, `inform` becomes Gatekeeper `warn`, and `enforce` becomes `deny`.
+
 ## Observability
 
 Collectors should stay service accounts. The person querying must not borrow that identity.
@@ -186,6 +196,7 @@ oc auth can-i get virtualmachines.kubevirt.io -n team-a --as=<hub-username> --as
 - [Fine-grained RBAC for virtual machines](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index#fine-grain-mca)
 - [ManagedClusterSet](https://open-cluster-management.io/docs/concepts/cluster-inventory/managedclusterset/)
 - [Application workload RBAC sample](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/AC-Access-Control/policy-configure-appworkloads-rbac-sample.yaml)
+- [Gatekeeper constraint templates](https://open-policy-agent.github.io/gatekeeper/website/docs/constrainttemplates/)
 
 ---
 
@@ -454,4 +465,63 @@ subjects:
   - apiGroup: policy.open-cluster-management.io
     kind: Policy
     name: policy-configure-appworkloads-rbac
+```
+
+## E. Gatekeeper: one label on a namespace
+
+A namespace admin may add `argocd.argoproj.io/managed-by` and no other new label. The template is the rule. The constraint turns it on for `Namespace` updates.
+
+`enforcementAction: deny` matches a policy whose `remediationAction` is `enforce`. Use `warn` when the policy is `inform`.
+
+```yaml
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8snamespacelabelchange
+  annotations:
+    description: >-
+      Allows a non-system user to add only argocd.argoproj.io/managed-by
+      on a namespace. Skips namespaces whose name contains openshift.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sNamespaceLabelChange
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package namespacechange
+
+        violation[{"msg": msg}] {
+          input.review.operation == "UPDATE"
+          input.review.kind.kind == "Namespace"
+          not contains(lower(input.review.object.metadata.name), "openshift")
+          not startswith(input.review.userInfo.username, "system:")
+
+          new_labels := object.get(input.review.object.metadata, "labels", {})
+          old_meta := object.get(object.get(input.review, "oldObject", {}), "metadata", {})
+          old_labels := object.get(old_meta, "labels", {})
+
+          added := {key |
+            new_labels[key]
+            not old_labels[key]
+          }
+
+          count(added) > 0
+          added_label := added[_]
+          added_label != "argocd.argoproj.io/managed-by"
+
+          msg := sprintf("Added label key '%v' is not allowed on namespace '%v'. Only 'argocd.argoproj.io/managed-by' is permitted.", [added_label, input.review.object.metadata.name])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sNamespaceLabelChange
+metadata:
+  name: namespace-argocd-managed-by-only
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Namespace"]
 ```
