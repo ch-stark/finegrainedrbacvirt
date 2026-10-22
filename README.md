@@ -1,6 +1,10 @@
 blog about new RBAC feature in ACM 2.16
 
-- [RBAC in ACM: the patterns you need](rbac-acm-fleet.md)
+- [Fine-grained RBAC across an ACM fleet](rbac-acm-fleet.md), the reference
+- [Architecture and concepts](rbac-architecture.md)
+- [OpenShift Virtualization RBAC](rbac-virtualization.md)
+- [Application RBAC](rbac-applications.md)
+- [GitOps integration](rbac-gitops.md)
 - [Demystifying Fine-Grained RBAC for Virtualization in ACM 2.16](virtrbac.md)
 - [Disabling KubeVirt Role Aggregation for Maximum Isolation](disable-role-aggregation.md)
 - [Multi-Tenant RBAC for VirtualMachines with PolicyGenerator](customrbacpolicy.md)
