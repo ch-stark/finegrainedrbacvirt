@@ -1,8 +1,6 @@
 # RBAC in ACM: the patterns you need
 
-ACM is useful in three places: applications, virtual machines, and observability. Each place has more than one pattern. A team can keep the grant on the spoke. A platform team can write it once on the hub and project it. Some grants need both. A few cases also need an admission controller, because the role that allows the update is still too wide for the change you want to permit.
-
-This is a deep dive into those concepts. The patterns are not interchangeable. A virtual machine fleet and an application platform often choose opposite ones, and both choices can be right.
+This is a deep dive on what to consider regarding RBAC in ACM and the different usecases and patterns which can be implemented.
 
 The **hub** decides what you see: which clusters, which console tabs, which queries. The **spoke** decides what you can do. A console click that returns `Forbidden` is usually a hub role without a matching spoke binding.
 
@@ -260,7 +258,7 @@ oc auth can-i get virtualmachines.kubevirt.io -n team-a --as=<hub-username> --as
 
 ---
 
-## A. Enable fine-grained RBAC
+## A. Enable fine-grained RBAC (based on MultiClusterRoleAssignment)
 
 In ACM 2.16 and 2.17 the component is off by default. On the hub:
 
