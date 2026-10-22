@@ -6,145 +6,10 @@ This article explores practical patterns for designing fine-grained, auditable a
 
 The goal is not simply to make access work. It is to make access predictable, appropriately scoped, and secure across the fleet.
 
-> **Scope and version note:** Role names, the `MulticlusterRoleAssignment` schema, and the observability statements below were checked against the ACM 2.17 Secure clusters and Observability guides, and against the OpenShift Virtualization 4.22 authorization notes. They were not applied to a live cluster for this revision. On the hub, run `oc explain` on any custom resource before you apply an example. A later release can promote a Technology Preview item or change a field name.
-
-## How to read this
-
-This page is the reference. The recommended path for a new fleet is the Quick start. The longer sections keep the alternatives, pitfalls, and YAML.
-
-Focused guides, each linked back here:
-
-- [Architecture and concepts](rbac-architecture.md): hub versus managed cluster, identity, cluster sets, and hub objects that grant spoke power.
-- [OpenShift Virtualization RBAC](rbac-virtualization.md): VM administrator roles, namespace scope, and cross-cluster migration.
-- [Application RBAC](rbac-applications.md): spoke ownership first, centralized policy when the platform team wants one source.
-- [GitOps integration](rbac-gitops.md): Argo CD as a separate authorization system, including ApplicationSets outside the control-plane namespace.
-
-## Quick start
-
-Use this when the goal is a VM administrator for one namespace on a set of clusters, on ACM 2.17 with the fine-grained virtualization roles enabled. Everything after this section is the reference for other choices.
-
-### Architecture
-
-```
-Identity provider
-    |
-    v
-Human user on the ACM console (hub)
-    |
-    v
-Hub authorization (cluster set, console role)
-    |
-    v
-cluster-proxy impersonates the user and groups
-    |
-    v
-Managed-cluster API, evaluated as that user
-    |
-    v
-RoleBinding created from a MulticlusterRoleAssignment
-```
-
-Controllers and GitOps use a service account on the spoke. That path is drawn in section 2.2. A person's console click and a controller change show different identities in the spoke audit log.
-
-### Recommended design
-
-| Decision | Recommendation | Alternative, later in this page |
-| --- | --- | --- |
-| Virtual machines | One `MulticlusterRoleAssignment` per group, namespace list when the project name is stable | Cluster-wide binding, or bindings created on each spoke |
-| Applications | RoleBindings on the spoke, owned by the team | An ACM policy distributes the same bindings |
-| GitOps | Argo CD RBAC and an AppProject, separate from ACM roles | Teams stay on the spoke and do not open the hub |
-| Metrics | Hub view of the managed cluster | Technology Preview namespace metric RBAC. Not a `MulticlusterRoleAssignment` |
-| Who may grant access | Platform owners create assignments, policies, and placements | |
-
-Prerequisites for the example, from the ACM 2.17 virtualization procedure:
-
-1. Enable the `fine-grained-rbac` component. Appendix A shows the patch. Skip the append if the component is already listed.
-2. The group string on the hub token matches the subject on the assignment. Section 4 covers identity.
-3. A platform owner has bound the cluster set into the namespace that holds the `Placement`.
-4. The `Placement` exists before the assignment, and it selects only clusters where `kubevirt.io:admin` and `acm-vm-extended:admin` exist.
-5. On the hub, bind the group to `acm-vm-fleet:view` so the fleet virtualization console opens. That binding is separate from the assignment.
-
-### Minimal example
-
-`targetNamespaces` lists one project, so the controller creates a `RoleBinding` in `team-a-vms` and nowhere else. The schema is the ACM 2.17 form: cluster selection sits on each role assignment.
-
-```yaml
-apiVersion: rbac.open-cluster-management.io/v1beta1
-kind: MulticlusterRoleAssignment
-metadata:
-  name: zonea-vm-admins-team-a
-  namespace: site-virt
-spec:
-  subject:
-    kind: Group
-    name: zonea-vm-admins
-  roleAssignments:
-    - name: kubevirt-admin
-      clusterRole: kubevirt.io:admin
-      targetNamespaces:
-        - team-a-vms
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
-    - name: vm-extended-admin
-      clusterRole: acm-vm-extended:admin
-      targetNamespaces:
-        - team-a-vms
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
-```
-
-Confirm the fields on your hub:
-
-```
-oc explain multiclusterroleassignment.spec.roleAssignments.clusterSelection
-```
-
-### Validation
-
-Run these on a selected managed cluster, with the username and groups from the hub token.
-
-Permitted, in the listed namespace:
-
-```
-oc auth can-i get virtualmachines.kubevirt.io \
-  -n team-a-vms \
-  --as=<hub-username> \
-  --as-group=zonea-vm-admins
-```
-
-Denied, in a namespace that is not listed:
-
-```
-oc auth can-i get virtualmachines.kubevirt.io \
-  -n other-team \
-  --as=<hub-username> \
-  --as-group=zonea-vm-admins
-```
-
-A `yes` on the second command means the binding is wider than this example. Then open the fleet virtualization console as that user. In the spoke audit log, the console request should show the impersonated user. A work-agent change still shows a service account.
-
-### If the console says Forbidden
-
-| What you see | Where to look |
-| --- | --- |
-| The cluster is missing in the console | Cluster-set view, and the `ManagedClusterSetBinding` |
-| The virtualization page opens and the API returns `Forbidden` | The spoke binding, the group string, and whether this cluster is in the placement |
-| Virtual machines in another namespace are visible | `targetNamespaces` was omitted, or OpenShift aggregated `kubevirt.io:admin` into the namespace `admin` role |
-| Metrics for every namespace are visible | Expected unless Technology Preview metric RBAC is configured. Section 9 |
-
-Section 13 is the longer troubleshooting list.
-
+> **Scope and version note:** The examples below are based on ACM and OpenShift authorization patterns, including features whose availability depends on product version. Verify API schemas, supported configurations, and preview or general-availability status against the exact releases deployed in your environment before applying these examples in production. Fine-grained RBAC for observability and for logging is work in progress. Do not treat the query and log authorization behavior in this article as a finished, generally available model.
 
 ## Table of Contents
 
-- How to read this
-- Quick start
 - 1\. The Problem: Access Granted, but Still Forbidden
 - 2\. Understand the Hub-and-Spoke Authorization Model
 - 3\. Choose the Right Delegation Pattern
@@ -284,7 +149,7 @@ For this article, three areas are particularly relevant: applications, virtual m
 | --- | --- | --- | --- |
 | Applications | ACM policy distributes RBAC resources; GitOps can manage application configuration. With the Argo CD agent and the central UI, AppProject RBAC covers day-to-day management in the Argo CD UI | Teams own RoleBindings on managed clusters | Project names and ownership may differ by cluster. The ACM console is a separate path from the Argo CD UI |
 | Virtual machines | ACM `MulticlusterRoleAssignment` distributes role bindings | RBAC bindings are managed on each spoke | Roles and team responsibilities often repeat across a fleet |
-| Observability and logging | Hub view of a managed cluster gates that cluster's metrics. Namespace-scoped metric queries are a separate Technology Preview in ACM 2.17, and they are not a `MulticlusterRoleAssignment` | Users query monitoring on individual clusters | Grafana is the 2.17 visualization. Perses dashboards are Technology Preview. Neither one is log isolation |
+| Observability and logging | Hub-side access is scoped through the supported ACM observability authorization model. Perses dashboards placed in a namespace follow OpenShift RBAC for who can open them. Fine-grained query and log RBAC is work in progress | Users query monitoring on individual clusters | Collection identity, query identity, and dashboard visibility are separate. Do not treat the current query or log model as finished |
 
 ### Centralized authorization
 
@@ -453,17 +318,15 @@ This reduces the need to create equivalent bindings manually on every spoke.
 
 A `MulticlusterRoleAssignment` is the object you create for a team. The controller keeps the corresponding `ClusterPermission` objects in the namespace of each selected managed cluster, and each `ClusterPermission` creates the `ManifestWork` that syncs the bindings. For a static grant on one cluster, such as a controller service account, write the `ClusterPermission` directly.
 
-In the ACM 2.17 schema, cluster selection is `spec.roleAssignments[].clusterSelection` on each role assignment. Appendices B and C follow that schema. Confirm it with `oc explain` on the hub you are changing.
-
 A typical design might use:
 
-These names are from the ACM 2.17 fine-grained virtualization role table. Inspect the ClusterRoles on the cluster before you bind them.
-
-| Persona | Hub | Managed cluster |
+| Persona | Hub permission | Managed-cluster permission |
 | --- | --- | --- |
-| VM viewer | `acm-vm-fleet:view` | `kubevirt.io:view` and `acm-vm-extended:view` |
-| VM administrator | `acm-vm-fleet:view` | `kubevirt.io:admin` and `acm-vm-extended:admin` |
-| Cross-cluster live migration | `acm-vm-fleet:admin` | `kubevirt.io:admin` and `acm-vm-extended:admin` on the source and the target. The 2.17 virtualization guide also lists `acm-vm-cluster-migration:view` on the target. |
+| VM viewer | Access to the relevant VM console capability | Virtual machine view roles |
+| VM administrator | Access to the relevant VM console capability | Virtual machine administration roles |
+| Migration operator | Appropriate hub-side migration capability | Required migration roles on source and destination clusters |
+
+The precise role names and permissions depend on the installed OpenShift Virtualization and ACM versions. Inspect the actual ClusterRoles before creating bindings.
 
 ### 6.2 Cluster-wide versus namespace-scoped grants
 
@@ -502,9 +365,7 @@ OpenShift and Kubernetes can aggregate permissions from one ClusterRole into ano
 
 This matters when OpenShift Virtualization permissions interact with broader namespace roles.
 
-OpenShift Virtualization 4.22 documents that `kubevirt.io:view`, `kubevirt.io:edit`, and `kubevirt.io:admin` are aggregated into the default `view`, `edit`, and `admin` roles. A namespace administrator can then act on virtual machines without a separate virtualization binding. `kubevirt.io:migrate` is not aggregated. From OpenShift Virtualization 4.19, live migration inside a cluster requires an explicit binding to `kubevirt.io:migrate`.
-
-A change to role aggregation can alter the effective permissions of existing bindings.
+A change to role aggregation can alter the effective permissions of existing bindings. A namespace administrator might receive more virtualization access than expected if the relevant role is aggregated into the namespace's `admin` role.
 
 Before changing aggregation behavior:
 
@@ -672,52 +533,30 @@ If the same teams are later asked to manage those applications in the ACM consol
 
 ## 9\. Observability and Query Authorization
 
-Checked against the ACM 2.17 Observability guide and the Secure clusters section "Enabling RBAC for observability." A later release can promote a Technology Preview item, or retire Grafana. Read the guide for the release you run before you treat any row below as finished.
+> **Work in progress:** RBAC for ACM observability and for logging is currently work in progress. Namespace-scoped Perses dashboards, described below, are a partial control that exists today. They are not a finished model for who can query metrics or logs. Re-check the installed ACM release before relying on query isolation or log isolation in production.
 
-Four questions get mixed together. They have different answers in that 2.17 documentation.
+Observability requires separating two different activities:
 
-| Question | Documented in ACM 2.17 | What that control does not do |
-| --- | --- | --- |
-| Who can see a managed cluster's metrics? | The user needs view access to that managed cluster on the hub. Without the view role, managed-cluster metrics are denied. To open the data in Grafana, the user also needs a `RoleBinding` in the managed cluster's namespace on the hub. | Cluster view does not limit the user to one namespace inside the cluster. |
-| Who can query metrics for one namespace? | Technology Preview. A hub `ClusterRole` names the managed clusters in `resourceNames` and uses a verb of the form `metrics/<namespace>`. In Grafana, those users see no fleet-wide summary dashboards and can select only the clusters and namespaces named in that role. | This is not a `MulticlusterRoleAssignment`. A virtualization assignment does not install this filter. |
-| Who can open a dashboard? | The observability service deploys Grafana. Perses is additional, and it is Technology Preview: set `spec.capabilities.platform.metrics.ui.enabled: true` on `MultiClusterObservability`, then open **Observe > Dashboards (Perses)** in the `open-cluster-management-observability` project. | Hiding a dashboard does not hide the series. Query authorization is the row above. |
-| Who can query logs across the fleet? | The 2.17 observability guide documents metrics access. It does not describe a finished model for fleet log queries. | A metrics view role, a Perses dashboard, and a `MulticlusterRoleAssignment` are not log isolation. |
+1. Collecting metrics and logs from a managed cluster.
+2. Allowing a human user to query that data.
 
-The collector runs as a service account. The person querying is a different identity. The collector's permissions are not a grant you hand to a user.
+The collector usually runs with a service-account identity. The person querying the data should be authorized independently.
 
-### 9.1 Supported, preview, and unavailable
+A collector's permissions should not become a general-purpose authorization mechanism for human users.
 
-Supported in the 2.17 secure-clusters procedure: hub view of the managed cluster is the gate for that cluster's metrics, and Grafana needs the namespace `RoleBinding` described above.
+### 9.1 Centralized queries
 
-Technology Preview, and off until you configure it:
+In centralized ACM observability configurations, query access can depend on the user's permissions to view the relevant managed clusters.
 
-- Namespace-scoped metric access through the `metrics/<namespace>` verb.
-- Perses dashboards next to Grafana.
+The precise scope of access to metrics and logs depends on the observability architecture and the features supported by the deployed version.
 
-Not available through `MulticlusterRoleAssignment` in that guide: a PromQL or LogQL scope on the same object that grants virtual machine roles. Restricting the console does not restrict every API that can read the stored metrics.
+Do not assume that a user who can view a cluster has unrestricted access to every observability data source, or that cluster-level authorization automatically provides namespace-level filtering.
 
-The Technology Preview metric role looks like this. The verb is the namespace name, prefixed with `metrics/`.
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: awesome-app-metrics-role
-rules:
-  - apiGroups:
-      - cluster.open-cluster-management.io
-    resources:
-      - managedclusters
-    resourceNames:
-      - devcluster1
-      - devcluster2
-    verbs:
-      - metrics/AwesomeAppNS
-```
-
-Bind that role to the group. The ACM 2.17 observability guide is the source for the full procedure, including the Grafana behavior: no fleet-level summary data, and cluster and namespace pickers limited to the role.
+Verify the effective behavior for the actual metrics and logging components.
 
 ### 9.2 Logs deserve particular scrutiny
+
+Logging RBAC is part of the same work in progress. There is not yet a finished, generally available model for who can query which logs across the fleet.
 
 Logs can contain more sensitive information than aggregate metrics.
 
@@ -729,7 +568,9 @@ Depending on the workload and logging configuration, they may include:
 - Audit events.
 - Virtual machine console output.
 
-A broad query permission can expose that data even when the user cannot modify workloads. Review retention and who can reach the query API. Do not describe that review as a generally available fleet log RBAC feature until the guide for your release does.
+A broad query permission can therefore expose sensitive information even when the user cannot modify workloads.
+
+Review query scope, retention, access logging, and the sensitivity of the data collected.
 
 ### 9.3 Local observability
 
@@ -737,7 +578,17 @@ A user who logs in directly to a managed cluster and queries its own monitoring 
 
 Document both models if your organization supports them.
 
-Centralized observability permissions do not apply to a direct login on the managed cluster's monitoring interface.
+Do not assume that centralized observability permissions apply to direct access to a managed cluster's monitoring interface.
+
+### 9.4 Perses dashboards follow namespace RBAC
+
+ACM observability uses Perses for dashboards. A Perses dashboard is a resource you can place in a namespace, and access to that resource follows ordinary OpenShift RBAC.
+
+That helps, to some extent. Put a team's dashboards in a namespace that team can view, and people without permission to get or list those dashboard resources will not see them in the console. You do not need a separate dashboard access-control list for that boundary. Users who can create or update the dashboard resource can edit it. Users who can only read it can open it.
+
+The limit is that this authorizes the dashboard object, not the data behind it. Opening a dashboard is not the same as being restricted to the series that dashboard queries. A user who can view the dashboard may still receive whatever metrics or logs the query path allows. A user who cannot see the dashboard may still reach the same data through another query interface, if that interface authorizes them.
+
+Use namespace placement to separate who can see and edit which dashboards. Keep testing the query authorization model above for who can read the underlying data. Confirm the dashboard API, and which namespaces the installed ACM and OpenShift releases expose in Observe, before relying on this split.
 
 ## 10\. When RBAC Is Not Enough: Admission Control
 
@@ -1038,9 +889,9 @@ Validate the required permissions on both the source and destination clusters, a
 
 Fine-grained RBAC for observability and logging is still work in progress. Review whatever query behavior the installed ACM release actually enforces. Do not assume that a cluster-set role provides namespace-level or workload-level data isolation, for metrics or for logs.
 
-### A dashboard is hidden, but the same metrics are still visible
+### A Perses dashboard is hidden, but the same data is still visible
 
-Grafana and Perses control who can open a dashboard. Query authorization controls who can read the series. In ACM 2.17, namespace-scoped metric queries are the Technology Preview `metrics/<namespace>` role, and hiding a dashboard does not apply that role.
+Dashboard namespace RBAC controls who can open that dashboard resource. Query authorization controls who can read the metrics and logs. Test both. Hiding a dashboard does not hide the series it queries.
 
 ## 14\. Production Readiness Checklist
 
@@ -1076,10 +927,10 @@ Before deploying an ACM fleet-wide RBAC design, verify the following.
 ### Observability and admission control
 
 - [ ] Metrics and log access are reviewed separately where their sensitivity differs.
-- [ ] Hub view of each managed cluster is the metrics gate you intend, for the ACM release you run.
-- [ ] Namespace metric RBAC is enabled only if you have accepted the Technology Preview procedure, and it has been tested in Grafana.
-- [ ] Dashboard visibility, Grafana or Perses, has been tested separately from query access.
-- [ ] Fleet log access is not described as isolated unless the guide for that release says so.
+- [ ] The observability and logging RBAC design is treated as work in progress and re-checked against the installed ACM release before production use.
+- [ ] The actual query authorization model has been tested.
+- [ ] Perses dashboards that should be team-scoped live in namespaces whose OpenShift RBAC matches that audience.
+- [ ] Dashboard visibility has been tested separately from query access to the underlying metrics and logs.
 - [ ] Admission policies have positive and negative test cases.
 - [ ] Exceptions for platform controllers and system namespaces are explicit and justified.
 
@@ -1097,7 +948,7 @@ Fine-grained RBAC across an ACM-managed OpenShift fleet is not simply a matter o
 
 It requires an understanding of the complete authorization path: the identity presented by the user, the hub-side permissions that expose a capability, the managed-cluster RBAC that ultimately authorizes the request, and the service accounts used by controllers and automation.
 
-Different workloads benefit from different approaches. Virtual machine permissions can often be managed centrally when roles and responsibilities repeat across a fleet. Application RBAC may be better owned by individual teams, with centralized policy distribution as an option. Observability needs a separate review of collection and query authorization. Fine-grained RBAC for observability and for logging is work in progress, so the current query and log behavior must be verified on the installed release rather than assumed. In ACM 2.17, Grafana is the documented metrics view, namespace-scoped metric queries are Technology Preview, and Perses dashboards are a separate Technology Preview. None of those is a finished fleet log RBAC model. Admission control can enforce restrictions that ordinary RBAC cannot express, including which objects may be deleted.
+Different workloads benefit from different approaches. Virtual machine permissions can often be managed centrally when roles and responsibilities repeat across a fleet. Application RBAC may be better owned by individual teams, with centralized policy distribution as an option. Observability needs a separate review of collection and query authorization. Fine-grained RBAC for observability and for logging is work in progress, so the current query and log behavior must be verified on the installed release rather than assumed. Namespace-scoped Perses dashboards add an OpenShift RBAC boundary for who can open a dashboard, and that boundary does not replace query authorization. Admission control can enforce restrictions that ordinary RBAC cannot express, including which objects may be deleted.
 
 The most important security lesson is that **permissions to modify fleet-management resources can become permissions to grant access on managed clusters**.
 
@@ -1146,8 +997,6 @@ This example illustrates a cluster-wide assignment for a group that administers 
 
 The API version and role names must match the installed ACM and OpenShift Virtualization versions.
 
-The ACM 2.17 schema puts `clusterSelection` on each role assignment. `targetNamespaces` is omitted, so the documented result is a `ClusterRoleBinding` on each selected cluster. Confirm with `oc explain` before you apply this on a different release.
-
 ```yaml
 apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
@@ -1158,24 +1007,17 @@ spec:
   subject:
     kind: Group
     name: zonea-vm-admins
+  placement:
+    name: remote-vm-sites
+    namespace: site-virt
   roleAssignments:
     - name: kubevirt-admin
       clusterRole: kubevirt.io:admin
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
     - name: vm-extended-admin
       clusterRole: acm-vm-extended:admin
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
 ```
 
-With an empty or omitted `targetNamespaces` field, the ACM 2.17 guide says the result is a `ClusterRoleBinding` on the managed cluster.
+With an empty or omitted `targetNamespaces` field, the controller's behavior is intended to provide cluster-wide access through the corresponding binding, subject to the API's supported semantics.
 
 Before applying this example:
 
@@ -1189,8 +1031,6 @@ Before applying this example:
 
 When the feature and role definitions support namespace-scoped assignments, a namespace list can restrict where the bindings are created.
 
-The ACM 2.17 schema puts `clusterSelection` on each role assignment. Each listed namespace receives a `RoleBinding`. Other namespaces do not.
-
 ```yaml
 apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
@@ -1201,27 +1041,20 @@ spec:
   subject:
     kind: Group
     name: zonea-vm-admins
+  placement:
+    name: remote-vm-sites
+    namespace: site-virt
   roleAssignments:
     - name: kubevirt-admin
       clusterRole: kubevirt.io:admin
       targetNamespaces:
         - team-a-vms
         - team-b-vms
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
     - name: vm-extended-admin
       clusterRole: acm-vm-extended:admin
       targetNamespaces:
         - team-a-vms
         - team-b-vms
-      clusterSelection:
-        type: placements
-        placements:
-          - name: remote-vm-sites
-            namespace: site-virt
 ```
 
 This pattern should be used only after verifying the supported API schema and the scope of each role.
@@ -1542,14 +1375,14 @@ Similarly, exempting every username beginning with `system:` should not be treat
 
 ## References and Further Reading
 
-Checked for this revision:
+Use the documentation corresponding to the exact product versions deployed in your environment.
 
-- [Secure clusters, ACM 2.17](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index), including fine-grained virtualization RBAC and "Enabling RBAC for observability."
-- [Observability, ACM 2.17](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html/observability/observing-environments-intro), including "Configuring fine-grain RBAC" and "Enabling Perses dashboards," both Technology Preview in that guide.
-- [OpenShift Virtualization 4.22 authorization](https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/virtualization/about), default cluster roles and aggregation.
-- [Multicluster Role Assignment](https://github.com/stolostron/multicluster-role-assignment), for the `clusterSelection` field on `v1beta1`.
-
-Use the documentation for the exact product versions deployed in your environment. The examples in this article were aligned to those guides and were not applied to a live cluster in this revision.
+- Red Hat Advanced Cluster Management documentation
+- OpenShift Container Platform documentation
+- Open Cluster Management documentation
+- Open Policy Agent and Gatekeeper
+- Argo CD documentation
+- OpenShift GitOps documentation
 
 For reproducibility, document the exact ACM, OpenShift, OpenShift Virtualization, OpenShift GitOps, and Gatekeeper versions used to test the examples.
 
