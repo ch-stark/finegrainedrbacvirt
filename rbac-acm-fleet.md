@@ -10,7 +10,7 @@ The **hub** decides what a person may see: which clusters, which console tabs, w
 
 ## Start here
 
-- ACM is useful in three places: applications, virtual machines, and observability. Each place can be centralized or decentralized. You can mix them.
+- This post looks at RBAC for applications, virtual machines, and observability. ACM has many other features. For these three, the grant can sit on the hub or on the spoke, and one fleet can choose differently for each.
 - A virtual machine fleet usually goes centralized, because the same group and the same roles repeat on every cluster in the zone.
 - Application teams usually stay decentralized, because project names differ per cluster. A hub policy is the centralized option when the customer accepts it.
 - Observability collection stays a service account on the spoke. The query on the hub follows the cluster set. Finer query scope is not generally available yet.
@@ -43,7 +43,7 @@ The console path needs the hub to be self-managed (`local-cluster`). The group s
 
 ## Choose a pattern per place
 
-Centralized means the hub holds the grant and projects it. Decentralized means the grant is created on the spoke. The hub may still supply the console tab or the query.
+The table is the scope of this post: applications, virtual machines, and observability. Centralized means the hub holds the grant and projects it. Decentralized means the grant is created on the spoke. The hub may still supply the console tab or the query.
 
 | Place | Centralized | Decentralized |
 | --- | --- | --- |
