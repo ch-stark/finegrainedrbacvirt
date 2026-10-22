@@ -1,6 +1,8 @@
 # RBAC in ACM: the patterns you need
 
-When you implement RBAC with ACM there are many options and this deep-drive blog tries to write them down.
+ACM is useful in three places: applications, virtual machines, and observability. Each place has more than one pattern. A team can keep the grant on the spoke. A platform team can write it once on the hub and project it. Some grants need both. A few cases also need an admission controller, because the role that allows the update is still too wide for the change you want to permit.
+
+This is a deep dive into those concepts. The patterns are not interchangeable. A virtual machine fleet and an application platform often choose opposite ones, and both choices can be right.
 
 The **hub** decides what you see: which clusters, which console tabs, which queries. The **spoke** decides what you can do. A console click that returns `Forbidden` is usually a hub role without a matching spoke binding.
 
@@ -23,15 +25,29 @@ The console path needs the hub to be self-managed (`local-cluster`). The group s
 
 The console never asks the spoke identity provider. Configure that provider on the spokes only when the same people log in there directly. If they must not, leave the user provider off the spokes. That blocks direct login more simply than an admission rule on tokens. Keep a break-glass administrator for when the hub is down.
 
+## The three places
+
+The same hub and spoke split shows up in applications, virtual machines, and observability. Centralized means the hub holds the grant and projects it. Decentralized means the grant is created on the spoke, and the hub may only supply the console or the query.
+
+| Place | Centralized | Decentralized |
+| --- | --- | --- |
+| Applications | A hub `Policy` creates the project `RoleBinding`s. OpenShift GitOps applies from a `GitOpsCluster`, as one spoke service account. | The team binds `admin` or `view` on the spoke. Project names can differ per cluster. |
+| Virtual machines | One `MulticlusterRoleAssignment` per group. The controller creates the spoke bindings. This is the usual VM pattern, because the same role repeats across the zone. | Bind `kubevirt.io:admin` on the spoke yourself. The console tab is still a hub role. |
+| Observability | The cluster set role decides which clusters a person may query. Finer scope, down to a namespace or a virtual machine, is the planned use of the same assignment. | Collectors stay service accounts on the spoke. A person who queries that cluster's own store is evaluated there, and ACM is not in that path. |
+
+You can mix them. Virtual machines often go centralized while the applications on those same clusters stay decentralized. Observability collection stays decentralized even when the query is centralized. The sections below are the concepts behind each cell.
+
+Admission control is the extra gate, not a fourth product area. Use it when a role cannot express the limit. Appendix E is one case: a namespace admin may add `argocd.argoproj.io/managed-by` and no other new label.
+
 ## What you need, by version
 
 | Capability | Where it stands |
 | --- | --- |
 | Cluster sets, policies, placements, cluster-proxy | Current ACM |
 | `MulticlusterRoleAssignment` for OpenShift Virtualization | Generally available in ACM 2.16 and 2.17. The API is still `rbac.open-cluster-management.io/v1beta1`. Generally available means Red Hat supports this use. It does not mean the API has moved to `v1`. The `fine-grained-rbac` component on `MultiClusterHub` is off until you enable it. |
-| Log and metric scope through the same assignment | Not generally available. There will not be a second API. |
-| Applications and Argo CD | Partially separate product RBAC but needs to fit together.  |
-| Admission control | Not ACM RBAC. Appendix E is a Gatekeeper example that allows one namespace label. |
+| Applications | Current ACM. Spoke-local bindings and a hub policy are both valid. The default GitOps account is a cluster administrator. |
+| Observability query scope through the same assignment | Not generally available. Collection stays a service account. There will not be a second API. |
+| Admission control | For a limit a role cannot express. Appendix E. |
 
 ## Cluster sets
 
@@ -92,8 +108,9 @@ The opening problem is not only the default service accounts. Whoever can write 
 | `MulticlusterRoleAssignment` | Bind any ClusterRole the placement's clusters have, to any subject you name. |
 | `Policy` with a `PlacementBinding` | Ship any manifest the template contains, including `ClusterRoleBinding` objects. `remediationAction: enforce` applies them. |
 | `ManifestWork` | The work agent applies it as a privileged service account. It lives in the managed cluster's namespace on the hub. |
-| `Placement` | Does not apply anything by itself. It aims the three objects above. A placement only sees sets bound into its namespace. |
+| `Placement` | Does not apply anything by itself. It aims the objects above. A placement only sees sets bound into its namespace. |
 | `ManagedClusterSetBinding` | Projects a set into a namespace, so placements there can select those clusters. Creating it requires `managedclustersets/bind`, not namespace admin alone. |
+| `GitOpsCluster` | Registers the placement's clusters with OpenShift GitOps. The default account on those clusters is a cluster administrator. |
 
 These objects are namespaced (except the bind permission, which is a subresource check). The OpenShift `admin` role in a namespace can create a `Policy`, a `Placement`, and a `MulticlusterRoleAssignment` there. Give that role only to people who are allowed to grant spoke power.
 
@@ -109,11 +126,16 @@ oc auth can-i create policies.policy.open-cluster-management.io -n site-virt --a
 oc auth can-i create placements.cluster.open-cluster-management.io -n site-virt --as=<user> --as-group=<group>
 oc auth can-i create manifestworks.work.open-cluster-management.io -n <cluster-namespace> --as=<user> --as-group=<group>
 oc auth can-i create managedclustersets/bind.cluster.open-cluster-management.io --as=<user> --as-group=<group>
+oc auth can-i create gitopsclusters.apps.open-cluster-management.io -n openshift-gitops --as=<user> --as-group=<group>
 ```
 
-A `yes` on the first four, in a namespace bound to a cluster set, is spoke power.
+A `yes` on the first four, or on `GitOpsCluster`, in a namespace bound to a cluster set, is spoke power.
 
 ## Virtualization
+
+Virtual machines are the place that usually goes centralized. The same group needs the same ClusterRoles on every cluster in the zone, and cross-cluster migration needs both clusters at once. One `MulticlusterRoleAssignment` per group is that pattern. The worked example above is the full path.
+
+The decentralized pattern still works. Bind `kubevirt.io:admin` and `acm-vm-extended:admin` on the spoke, by hand or with a local process. The console tab does not follow that binding. `acm-vm-fleet:view` stays on the hub. Without the hub role the tab does not open. Without the spoke binding the click returns `Forbidden`.
 
 A hub role opens the console tab. Spoke roles allow the action, as the user, not as the work service account.
 
@@ -131,9 +153,23 @@ OpenShift Virtualization aggregates `kubevirt.io:admin` into the namespace `admi
 
 Do not bind the retired names `kubevirt.io-acm-managed:*` or `kubevirt.io-acm-hub:*`.
 
+## Applications
+
+Applications are the place where the two patterns diverge.
+
+**Decentralized.** The team owns its projects. Someone on the spoke creates the `RoleBinding` for `admin` or `view`. The group string matches the hub group when those people also use the console. A developer who never logs in to the hub does not need a cluster set role. Project names can differ per cluster. That is the normal application layout, and it is why a hub-maintained namespace list is a poor fit here.
+
+**Centralized, with a policy.** A platform owner ships the bindings from the hub. Appendix D is the community sample. An SRE group gets `cluster-admin`. Each application group gets `admin` or `view` in its project. The policy creates the groups, the projects, and the bindings. Use it when the customer has accepted that the hub may grant namespace roles on the spokes. `MulticlusterRoleAssignment` can list namespaces too. The list does not grow when someone creates a project, and a long list can hit the `ManifestWork` size limit. For applications, prefer the policy, or the spoke-local binding, over that list.
+
+**Centralized apply, through OpenShift GitOps.** A `GitOpsCluster` in the Argo CD namespace points at a `Placement`. The placement only sees cluster sets bound into that namespace. The controller creates one cluster secret per selected cluster, in `openshift-gitops` by default. Push is the default: Argo CD on the hub applies to the spoke. The secret carries the `application-manager` account, and that account is a cluster administrator on the managed cluster, because the application subscription add-on uses it. Every Application aimed at that secret shares that ceiling. The person who clicked Sync is not the subject on the spoke.
+
+Narrow the account when the team should not be a cluster administrator. On the hub, create a `ManagedServiceAccount` and a `ClusterPermission`, and set `managedServiceAccountRef` on the `GitOpsCluster`. The new account is still one account for every Application that uses the secret. The `AppProject` limits the repositories, the clusters, and the namespaces. It does not change which account applies the manifests. Argo CD's own RBAC, in `argocd-rbac-cm` and in project roles, decides who may see and sync in the GitOps UI. The spoke still evaluates the service account.
+
+The same ApplicationSet can pull instead. The work agent applies a `ManifestWork`. In the ACM 2.16 GitOps documentation the Argo CD agent is Technology Preview. Enabling that add-on through `GitOpsCluster` turns push off for those applications. The agent connects out from the spoke. It still applies as a service account.
+
 ## Policies
 
-A policy creates and removes the spoke binding from one place. It cannot split two people who share a username, and it cannot edit a directory.
+A policy is one centralized pattern from the applications section. It creates and removes the spoke binding from one place. It cannot split two people who share a username, and it cannot edit a directory.
 
 Put the policy in a namespace whose placements only see the intended clusters, and only clusters where the ClusterRole exists. A second policy, placed only on `local-cluster`, binds the same group to the hub console role.
 
@@ -147,6 +183,8 @@ Remove one person from the hub group to revoke them. Remove the binding from the
 
 ## Admission
 
+Most grants stop at a role. Some do not. The question is no longer "may this person update the namespace?" It is "which label may they add?" A role that allows the update allows every label. An admission controller is how you refuse the rest. Treat it as a special case beside applications, virtual machines, and observability, not as a replacement for them.
+
 A role can allow an update and still be too wide. RBAC decides that this person may update the namespace. It does not decide which label they may add.
 
 The namespace admin may add `argocd.argoproj.io/managed-by`. Gatekeeper denies any other new label key. A namespace whose name contains `openshift` is out of scope. A user whose name starts with `system:` is out of scope, so a controller can still set labels.
@@ -157,11 +195,15 @@ Appendix E is the constraint. Gatekeeper must already be installed on the cluste
 
 ## Observability
 
-Collectors should stay service accounts. The person querying must not borrow that identity.
+Observability uses both patterns at once, and the two halves do not share an identity.
 
-Today, what someone can query follows the clusters their cluster set role lets them see. Hub role setup is in [Secure clusters](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index), "Enabling RBAC for Observability."
+**Collection is decentralized.** The collector on each spoke is a service account. The person who queries must not borrow that account. A scrape and a log line leave the cluster as the collector, then land in the hub store.
 
-Scoping queries with `MulticlusterRoleAssignment` is the planned direction. It is not generally available. Logs need a tighter rule than metrics. A metric is a number. A log line can contain tokens, audit events, and virtual-machine console output.
+**The query is centralized.** Today, what someone can query follows the clusters their cluster set role lets them see. A user who can see three clusters can query those three. Hub role setup is in [Secure clusters](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.17/html-single/secure_clusters/index), "Enabling RBAC for Observability."
+
+**The finer query is the centralized pattern that is not ready.** Scoping metrics, logs, and traces with `MulticlusterRoleAssignment` is the planned direction. It is not generally available. There will not be a second API. Logs need a tighter rule than metrics. A metric is a number. A log line can contain tokens, audit events, and virtual-machine console output.
+
+**The decentralized query still exists.** A person who logs in on one spoke and opens that cluster's own monitoring is evaluated by that cluster's RBAC. ACM is not in that path. The hub store is the path that uses the cluster set, and later the assignment.
 
 ## Identity
 
@@ -178,17 +220,18 @@ Removing the spoke provider does not stop the console path. Removing the hub pro
 1. Keep controller actions on service accounts. Run a person's click as that person.
 2. Decide whether those people log in on the spokes. If they do, use one identity provider. If they do not, do not configure a user provider there.
 3. Bind each team's group to `open-cluster-management:managedclusterset:view:<set>`. Have a platform owner create the `ManagedClusterSetBinding` with the `bind` role.
-4. Keep create permission on `MulticlusterRoleAssignment`, `Policy`, `Placement`, and `ManifestWork` with the people who are allowed to grant spoke power.
+4. Keep create permission on `MulticlusterRoleAssignment`, `Policy`, `Placement`, `ManifestWork`, and `GitOpsCluster` with the people who are allowed to grant spoke power.
 5. Enable `fine-grained-rbac` before using the virtualization roles.
-6. Grant spoke permissions with one `MulticlusterRoleAssignment` per group. Leave `targetNamespaces` empty unless the hub team can keep the list current.
-7. For applications, use the spoke-local path unless the customer allows centralized access. Appendix D is the centralized policy.
-8. On a spoke, confirm the grant:
+6. For virtual machines, grant spoke permissions with one `MulticlusterRoleAssignment` per group. Leave `targetNamespaces` empty unless the hub team can keep the list current. A spoke-local binding is the decentralized alternative. The console role stays on the hub.
+7. For applications, choose. Spoke-local bindings when the team owns the projects. Appendix D when the hub should grant them. A narrowed GitOps service account when Git applies the manifests. The default `application-manager` account is a cluster administrator.
+8. Add an admission controller only for a limit a role cannot express. Appendix E allows one namespace label.
+9. On a spoke, confirm the grant:
 
 ```bash
 oc auth can-i get virtualmachines.kubevirt.io -n team-a --as=<hub-username> --as-group=zonea-vm-admins
 ```
 
-9. In the spoke audit log, confirm a console click has an `impersonatedUser`. A work-agent change should still show `system:serviceaccount`.
+10. In the spoke audit log, confirm a console click has an `impersonatedUser`. A work-agent change, and a GitOps sync, should still show `system:serviceaccount`.
 
 ## Sources
 
@@ -197,6 +240,7 @@ oc auth can-i get virtualmachines.kubevirt.io -n team-a --as=<hub-username> --as
 - [ManagedClusterSet](https://open-cluster-management.io/docs/concepts/cluster-inventory/managedclusterset/)
 - [Application workload RBAC sample](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/AC-Access-Control/policy-configure-appworkloads-rbac-sample.yaml)
 - [Gatekeeper constraint templates](https://open-policy-agent.github.io/gatekeeper/website/docs/constrainttemplates/)
+- [ACM GitOps, 2.16](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.16/html/gitops/gitops-overview)
 
 ---
 
