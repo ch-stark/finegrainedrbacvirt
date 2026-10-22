@@ -316,6 +316,8 @@ RoleBindings or ClusterRoleBindings
 
 This reduces the need to create equivalent bindings manually on every spoke.
 
+A `MulticlusterRoleAssignment` is the object you create for a team. The controller keeps the corresponding `ClusterPermission` objects in the namespace of each selected managed cluster, and each `ClusterPermission` creates the `ManifestWork` that syncs the bindings. For a static grant on one cluster, such as a controller service account, write the `ClusterPermission` directly.
+
 A typical design might use:
 
 | Persona | Hub permission | Managed-cluster permission |
