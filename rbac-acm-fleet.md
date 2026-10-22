@@ -675,7 +675,7 @@ The effective impact depends on the permissions of the user, the resource config
 
 The general lesson is that the ability to create or modify these objects can be equivalent to the ability to grant spoke privileges.
 
-### 11.1 Namespace administrators may have more power than expected
+### 11.1 Namespace administrators may need more power than expected
 
 A common mistake is to grant namespace-level `admin` permissions in a hub namespace without reviewing which ACM resources can be created there.
 
