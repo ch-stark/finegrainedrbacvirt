@@ -167,6 +167,20 @@ Narrow the account when the team should not be a cluster administrator. On the h
 
 The same ApplicationSet can pull instead. The work agent applies a `ManifestWork`. In the ACM 2.16 GitOps documentation the Argo CD agent is Technology Preview. Enabling that add-on through `GitOpsCluster` turns push off for those applications. The agent connects out from the spoke. It still applies as a service account.
 
+**What works now.** ACM fine-grained RBAC and Argo CD RBAC do not configure each other. A hub `RoleBinding` does not open the Argo CD UI. An Argo CD policy does not create a spoke binding. You keep both.
+
+The ACM console shows a team's Applications when the group has a `RoleBinding` in that namespace on the hub. That is namespace RBAC on the hub. The cluster set role is still what decides which clusters the group may see.
+
+The Argo CD UI has its own policy. The rules live in `argocd-rbac-cm`, and the OpenShift GitOps CR carries the same text in `spec.rbac.policy`. Map an OpenShift group onto an Argo CD role in that policy. With Applications in any namespace, an application in the policy is `<project>/<namespace>/<name>`. A group can be allowed to sync `team-a/team-a/*` and be refused everywhere else. The instance has to read group scopes, or those group lines never match.
+
+**On the hub, teams use their own namespaces.** `spec.sourceNamespaces` on the hub Argo CD CR lists the namespaces that may hold `Application` objects. `spec.applicationSet.sourceNamespaces` lists the namespaces that may hold `ApplicationSet` objects. ApplicationSets in any namespace is generally available in OpenShift GitOps 1.22. The Application an ApplicationSet generates stays in the ApplicationSet's namespace, so that namespace also belongs in `spec.sourceNamespaces`.
+
+The `AppProject` is the wall around that namespace. `sourceRepos`, `destinations`, and the resource allow and deny lists decide what the team may name. Argo CD enforces the project before the spoke account is asked to apply anything.
+
+**On the spoke, the agent has a default landing place.** It writes the hub Application into the Argo CD namespace on the spoke. The spoke does not need Applications in any namespace for that. `destinationBasedMapping`, or a cluster annotation, can place the Application in a team namespace on the spoke. That spoke then needs `sourceNamespaces` for the namespace you chose.
+
+**Impersonation is standard mode only.** Upstream Argo CD 3.5 applies it to every API operation, not only sync: get, logs, delete, and resource actions. OpenShift GitOps 1.22 ships that as Technology Preview. Turn it on with `application.sync.impersonation.enabled` in `argocd-cm`, and name the account in `AppProject.spec.destinationServiceAccounts`, per destination server and namespace. The account is a service account. It is not the person who clicked Sync. The agent path does not use this. The `AppProject` limits stay. Impersonation chooses which account acts. It does not replace the project.
+
 ## Policies
 
 A policy is one centralized pattern from the applications section. It creates and removes the spoke binding from one place. It cannot split two people who share a username, and it cannot edit a directory.
@@ -241,6 +255,8 @@ oc auth can-i get virtualmachines.kubevirt.io -n team-a --as=<hub-username> --as
 - [Application workload RBAC sample](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/AC-Access-Control/policy-configure-appworkloads-rbac-sample.yaml)
 - [Gatekeeper constraint templates](https://open-policy-agent.github.io/gatekeeper/website/docs/constrainttemplates/)
 - [ACM GitOps, 2.16](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.16/html/gitops/gitops-overview)
+- [OpenShift GitOps 1.22 release notes](https://docs.redhat.com/en/documentation/red_hat_openshift_gitops/1.22/html/release_notes/index)
+- [Argo CD 3.5 impersonation](https://argo-cd.readthedocs.io/en/release-3.5/operator-manual/app-sync-using-impersonation/)
 
 ---
 
