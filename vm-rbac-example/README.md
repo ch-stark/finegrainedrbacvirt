@@ -2,7 +2,7 @@
 
 This runbook accompanies [Govern VM access with ACM 5.0](../virtrbacblog_v2.md). It implements three permission tiers for separate example teams. The namespaces, groups, and file names retain the `tenant-a`, `tenant-b`, and `tenant-c` identifiers used in the manifests.
 
-The source snapshot is tagged `acm5-rbac-reference-v1`. The article links to that snapshot; use a new reviewed commit for your deployment changes. The assignment policy starts disabled. There are no recorded live ACM results for this reference implementation; the [validation record](validation-results.md) distinguishes local checks from pending cluster tests.
+The source snapshot is tagged `acm5-rbac-reference-v2`. The article links to that snapshot; use a new reviewed commit for your deployment changes. The assignment policy starts disabled. There are no recorded live ACM results for this reference implementation; the [validation record](validation-results.md) distinguishes local checks from pending cluster tests.
 
 ## File map
 
@@ -46,6 +46,14 @@ oc --context HUB get placementdecision -n policies -o yaml
 ```
 
 Check exact decisions for both placements. `vm-rbac-hub` must select only `local-cluster`; `vm-rbac-spokes` must select only approved targets. The `example.com` label prefix is illustrative and valid; change the label and selector together if using your own prefix.
+
+## ACM 5.0 configuration references
+
+The [ACM 5.0 feature setup procedure](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-enable) enables an entry with `name: fine-grained-rbac` and `enabled: true` in `spec.overrides.components`.
+
+The [ACM 5.0 MRA examples](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-mca-examples) use `dev-virt` and `prod-virt` as management namespaces. This reference uses `policies`; workload namespace scope remains explicit in each assignment's `targetNamespaces`. Validate reconciliation and console discovery in the deployed environment using the results record.
+
+Snapshot refs named `acm5-rbac-reference-v*` are annotated tags, not branches. Keep each published tag fixed; create a new tag when revising the article and linked companion files.
 
 ## Configure PolicyGenerator in Argo CD
 
