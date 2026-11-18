@@ -2,7 +2,7 @@
 
 ## Status
 
-**Live deployment status: Not run.** This file is a template for actual operational evidence. Expected outcomes below are acceptance criteria, not observations. Complete the record for a specific source commit and environment before calling that deployment validated.
+**Full ACM 5.0 multi-cluster deployment status: Not run.** A separate [hub-only test on ACM build 5.1.0-184](../validation/hub-only/results.md) has recorded results. The template below remains for the original topology and target version; its pending cells must not be populated from the narrower run. Complete it for a specific source commit and environment before calling that deployment validated.
 
 ## Local checks
 

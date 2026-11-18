@@ -8,6 +8,8 @@ Examples and guidance for governing virtual machine access across managed cluste
 - [Tenant-scoped companion example](vm-rbac-example/README.md) — complete manifests, Argo CD integration, rollout and revocation procedures, and a validation record.
 - [Full Admin Fleet Virtualization example](examplefulladmin/README.md) — a separate cluster-wide administrative model. Its default wildcard role grants cluster-admin-equivalent access.
 
+[Live hub-only validation results](validation/hub-only/results.md) record the actual ACM build, passed API checks, revocation, and the remaining runtime/UI limits.
+
 The tenant example starts with assignments disabled. Read its rollout and validation instructions before granting access.
 
 ## Additional guides

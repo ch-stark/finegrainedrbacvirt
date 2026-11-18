@@ -1,0 +1,82 @@
+[
+  {
+    "name": "custom-vm-maintainer-81022281b77632fb",
+    "namespace": "tenant-a-namespace",
+    "roleRef": {
+      "apiGroup": "rbac.authorization.k8s.io",
+      "kind": "ClusterRole",
+      "name": "custom-vm-maintainer"
+    },
+    "subjects": [
+      {
+        "kind": "Group",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "tenant-a-operators"
+      }
+    ]
+  },
+  {
+    "name": "kubevirt.io-view-29df68d7a8e13053",
+    "namespace": "tenant-a-namespace",
+    "roleRef": {
+      "apiGroup": "rbac.authorization.k8s.io",
+      "kind": "ClusterRole",
+      "name": "kubevirt.io:view"
+    },
+    "subjects": [
+      {
+        "kind": "Group",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "tenant-a-operators"
+      }
+    ]
+  },
+  {
+    "name": "custom-vm-lifecycle-888fedcf40e5d3f9",
+    "namespace": "tenant-b-namespace",
+    "roleRef": {
+      "apiGroup": "rbac.authorization.k8s.io",
+      "kind": "ClusterRole",
+      "name": "custom-vm-lifecycle"
+    },
+    "subjects": [
+      {
+        "kind": "Group",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "tenant-b-operators"
+      }
+    ]
+  },
+  {
+    "name": "kubevirt.io-view-330295ab3669b34c",
+    "namespace": "tenant-b-namespace",
+    "roleRef": {
+      "apiGroup": "rbac.authorization.k8s.io",
+      "kind": "ClusterRole",
+      "name": "kubevirt.io:view"
+    },
+    "subjects": [
+      {
+        "kind": "Group",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "tenant-b-operators"
+      }
+    ]
+  },
+  {
+    "name": "kubevirt.io-view-c50e7d231dee2a4d",
+    "namespace": "tenant-c-namespace",
+    "roleRef": {
+      "apiGroup": "rbac.authorization.k8s.io",
+      "kind": "ClusterRole",
+      "name": "kubevirt.io:view"
+    },
+    "subjects": [
+      {
+        "kind": "Group",
+        "apiGroup": "rbac.authorization.k8s.io",
+        "name": "tenant-c-viewers"
+      }
+    ]
+  }
+]

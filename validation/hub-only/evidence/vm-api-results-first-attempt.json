@@ -1,0 +1,166 @@
+[
+  {
+    "test": "Maintainer creates a halted VM",
+    "status": 201,
+    "expected": [
+      201
+    ],
+    "passed": true,
+    "message": ""
+  },
+  {
+    "test": "a reads own VM",
+    "status": 200,
+    "expected": [
+      200
+    ],
+    "passed": true,
+    "message": ""
+  },
+  {
+    "test": "a patches own VM",
+    "status": 200,
+    "expected": [
+      200
+    ],
+    "passed": true,
+    "message": ""
+  },
+  {
+    "test": "a cannot delete own VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io \"rbac-validation-a\" is forbidden: User \"rbac-live-validation\" cannot delete resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-a-namespace\""
+  },
+  {
+    "test": "b reads own VM",
+    "status": 200,
+    "expected": [
+      200
+    ],
+    "passed": true,
+    "message": ""
+  },
+  {
+    "test": "b patches own VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io \"rbac-validation-b\" is forbidden: User \"rbac-live-validation\" cannot patch resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-b-namespace\""
+  },
+  {
+    "test": "b cannot delete own VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io \"rbac-validation-b\" is forbidden: User \"rbac-live-validation\" cannot delete resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-b-namespace\""
+  },
+  {
+    "test": "c reads own VM",
+    "status": 200,
+    "expected": [
+      200
+    ],
+    "passed": true,
+    "message": ""
+  },
+  {
+    "test": "c patches own VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io \"rbac-validation-c\" is forbidden: User \"rbac-live-validation\" cannot patch resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-c-namespace\""
+  },
+  {
+    "test": "c cannot delete own VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io \"rbac-validation-c\" is forbidden: User \"rbac-live-validation\" cannot delete resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-c-namespace\""
+  },
+  {
+    "test": "b cannot create a VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io is forbidden: User \"rbac-live-validation\" cannot create resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-b-namespace\""
+  },
+  {
+    "test": "c cannot create a VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io is forbidden: User \"rbac-live-validation\" cannot create resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-c-namespace\""
+  },
+  {
+    "test": "a cannot read team b VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io \"rbac-validation-b\" is forbidden: User \"rbac-live-validation\" cannot get resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-b-namespace\""
+  },
+  {
+    "test": "b cannot read team a VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io \"rbac-validation-a\" is forbidden: User \"rbac-live-validation\" cannot get resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-a-namespace\""
+  },
+  {
+    "test": "c cannot read team a VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.kubevirt.io \"rbac-validation-a\" is forbidden: User \"rbac-live-validation\" cannot get resource \"virtualmachines\" in API group \"kubevirt.io\" in the namespace \"tenant-a-namespace\""
+  },
+  {
+    "test": "Viewer cannot start VM",
+    "status": 403,
+    "expected": [
+      403
+    ],
+    "passed": true,
+    "message": "virtualmachines.subresources.kubevirt.io \"rbac-validation-c\" is forbidden: User \"rbac-live-validation\" cannot update resource \"virtualmachines/start\" in API group \"subresources.kubevirt.io\" in the namespace \"tenant-c-namespace\""
+  },
+  {
+    "test": "Lifecycle operator start request",
+    "status": 500,
+    "expected": [
+      200,
+      202
+    ],
+    "passed": false,
+    "message": "Internal error occurred: Internal error occurred: failed calling webhook \"mutatevirtualmachines.kubemacpool.io\": failed to call webhook: Post \"https://kubemacpool-service.openshift-cnv.svc:443/mutate-virtualmachines?timeout=10s\": no endpoints available for service \"kubemacpool-service\""
+  },
+  {
+    "test": "Lifecycle operator stop request",
+    "status": 409,
+    "expected": [
+      200,
+      202
+    ],
+    "passed": false,
+    "message": "Operation cannot be fulfilled on virtualmachine.kubevirt.io \"rbac-validation-b\": VM is not running"
+  }
+]

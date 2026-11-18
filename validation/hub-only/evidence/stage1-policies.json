@@ -1,0 +1,17 @@
+[
+  {
+    "name": "vm-rbac-hub-assignments",
+    "disabled": true,
+    "compliance": null
+  },
+  {
+    "name": "vm-rbac-hub-roles",
+    "disabled": true,
+    "compliance": null
+  },
+  {
+    "name": "vm-rbac-spoke-baseline",
+    "disabled": false,
+    "compliance": "Compliant"
+  }
+]

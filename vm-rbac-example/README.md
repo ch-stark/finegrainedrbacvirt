@@ -2,7 +2,7 @@
 
 This runbook accompanies [Govern VM access with ACM 5.0](../virtrbacblog_v2.md). It implements three permission tiers for separate example teams. The namespaces, groups, and file names retain the `tenant-a`, `tenant-b`, and `tenant-c` identifiers used in the manifests.
 
-The source snapshot is tagged `acm5-rbac-reference-v2`. The article links to that snapshot; use a new reviewed commit for your deployment changes. The assignment policy starts disabled. There are no recorded live ACM results for this reference implementation; the [validation record](validation-results.md) distinguishes local checks from pending cluster tests.
+The source snapshot is tagged `acm5-rbac-reference-v3`. The article links to that snapshot; use a new reviewed commit for your deployment changes. The assignment policy starts disabled. A [limited live hub-only run](../validation/hub-only/results.md) on ACM build `5.1.0-184` records policy and API results. The [validation record](validation-results.md) still tracks outstanding checks for the original ACM 5.0 multi-cluster topology.
 
 ## File map
 

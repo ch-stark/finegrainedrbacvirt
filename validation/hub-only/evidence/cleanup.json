@@ -1,0 +1,32 @@
+[
+  {
+    "namespace": "tenant-a-namespace",
+    "resource": "virtualmachines",
+    "disposableObjectsRemaining": []
+  },
+  {
+    "namespace": "tenant-a-namespace",
+    "resource": "virtualmachineinstances",
+    "disposableObjectsRemaining": []
+  },
+  {
+    "namespace": "tenant-b-namespace",
+    "resource": "virtualmachines",
+    "disposableObjectsRemaining": []
+  },
+  {
+    "namespace": "tenant-b-namespace",
+    "resource": "virtualmachineinstances",
+    "disposableObjectsRemaining": []
+  },
+  {
+    "namespace": "tenant-c-namespace",
+    "resource": "virtualmachines",
+    "disposableObjectsRemaining": []
+  },
+  {
+    "namespace": "tenant-c-namespace",
+    "resource": "virtualmachineinstances",
+    "disposableObjectsRemaining": []
+  }
+]

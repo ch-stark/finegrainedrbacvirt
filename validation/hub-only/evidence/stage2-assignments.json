@@ -1,0 +1,228 @@
+[
+  {
+    "name": "tenant-a-vm-access",
+    "namespace": "policies",
+    "spec": {
+      "roleAssignments": [
+        {
+          "clusterRole": "kubevirt.io:view",
+          "clusterSelection": {
+            "placements": [
+              {
+                "name": "vm-rbac-spokes",
+                "namespace": "policies"
+              }
+            ],
+            "type": "placements"
+          },
+          "name": "tenant-a-role-1",
+          "targetNamespaces": [
+            "tenant-a-namespace"
+          ]
+        },
+        {
+          "clusterRole": "custom-vm-maintainer",
+          "clusterSelection": {
+            "placements": [
+              {
+                "name": "vm-rbac-spokes",
+                "namespace": "policies"
+              }
+            ],
+            "type": "placements"
+          },
+          "name": "tenant-a-role-2",
+          "targetNamespaces": [
+            "tenant-a-namespace"
+          ]
+        }
+      ],
+      "subject": {
+        "kind": "Group",
+        "name": "tenant-a-operators"
+      }
+    },
+    "status": {
+      "appliedClusters": [
+        "local-cluster"
+      ],
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-11-18T13:47:44Z",
+          "message": "1 out of 1 ClusterPermission(s) applied successfully",
+          "observedGeneration": 1,
+          "reason": "Applied",
+          "status": "True",
+          "type": "Applied"
+        },
+        {
+          "lastTransitionTime": "2026-11-18T13:47:44Z",
+          "message": "2 out of 2 role assignment(s) ready",
+          "observedGeneration": 1,
+          "reason": "AssignmentsReady",
+          "status": "True",
+          "type": "Ready"
+        }
+      ],
+      "roleAssignments": [
+        {
+          "createdAt": "2026-11-18T13:47:42Z",
+          "message": "Applied to 1 cluster(s)",
+          "name": "tenant-a-role-1",
+          "reason": "SuccessfullyApplied",
+          "status": "Active"
+        },
+        {
+          "createdAt": "2026-11-18T13:47:42Z",
+          "message": "Applied to 1 cluster(s)",
+          "name": "tenant-a-role-2",
+          "reason": "SuccessfullyApplied",
+          "status": "Active"
+        }
+      ]
+    }
+  },
+  {
+    "name": "tenant-b-vm-access",
+    "namespace": "policies",
+    "spec": {
+      "roleAssignments": [
+        {
+          "clusterRole": "kubevirt.io:view",
+          "clusterSelection": {
+            "placements": [
+              {
+                "name": "vm-rbac-spokes",
+                "namespace": "policies"
+              }
+            ],
+            "type": "placements"
+          },
+          "name": "tenant-b-role-1",
+          "targetNamespaces": [
+            "tenant-b-namespace"
+          ]
+        },
+        {
+          "clusterRole": "custom-vm-lifecycle",
+          "clusterSelection": {
+            "placements": [
+              {
+                "name": "vm-rbac-spokes",
+                "namespace": "policies"
+              }
+            ],
+            "type": "placements"
+          },
+          "name": "tenant-b-role-2",
+          "targetNamespaces": [
+            "tenant-b-namespace"
+          ]
+        }
+      ],
+      "subject": {
+        "kind": "Group",
+        "name": "tenant-b-operators"
+      }
+    },
+    "status": {
+      "appliedClusters": [
+        "local-cluster"
+      ],
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-11-18T13:47:44Z",
+          "message": "1 out of 1 ClusterPermission(s) applied successfully",
+          "observedGeneration": 1,
+          "reason": "Applied",
+          "status": "True",
+          "type": "Applied"
+        },
+        {
+          "lastTransitionTime": "2026-11-18T13:47:44Z",
+          "message": "2 out of 2 role assignment(s) ready",
+          "observedGeneration": 1,
+          "reason": "AssignmentsReady",
+          "status": "True",
+          "type": "Ready"
+        }
+      ],
+      "roleAssignments": [
+        {
+          "createdAt": "2026-11-18T13:47:42Z",
+          "message": "Applied to 1 cluster(s)",
+          "name": "tenant-b-role-1",
+          "reason": "SuccessfullyApplied",
+          "status": "Active"
+        },
+        {
+          "createdAt": "2026-11-18T13:47:42Z",
+          "message": "Applied to 1 cluster(s)",
+          "name": "tenant-b-role-2",
+          "reason": "SuccessfullyApplied",
+          "status": "Active"
+        }
+      ]
+    }
+  },
+  {
+    "name": "tenant-c-vm-access",
+    "namespace": "policies",
+    "spec": {
+      "roleAssignments": [
+        {
+          "clusterRole": "kubevirt.io:view",
+          "clusterSelection": {
+            "placements": [
+              {
+                "name": "vm-rbac-spokes",
+                "namespace": "policies"
+              }
+            ],
+            "type": "placements"
+          },
+          "name": "tenant-c-role-1",
+          "targetNamespaces": [
+            "tenant-c-namespace"
+          ]
+        }
+      ],
+      "subject": {
+        "kind": "Group",
+        "name": "tenant-c-viewers"
+      }
+    },
+    "status": {
+      "appliedClusters": [
+        "local-cluster"
+      ],
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-11-18T13:47:44Z",
+          "message": "1 out of 1 ClusterPermission(s) applied successfully",
+          "observedGeneration": 1,
+          "reason": "Applied",
+          "status": "True",
+          "type": "Applied"
+        },
+        {
+          "lastTransitionTime": "2026-11-18T13:47:44Z",
+          "message": "1 out of 1 role assignment(s) ready",
+          "observedGeneration": 1,
+          "reason": "AssignmentsReady",
+          "status": "True",
+          "type": "Ready"
+        }
+      ],
+      "roleAssignments": [
+        {
+          "createdAt": "2026-11-18T13:47:43Z",
+          "message": "Applied to 1 cluster(s)",
+          "name": "tenant-c-role-1",
+          "reason": "SuccessfullyApplied",
+          "status": "Active"
+        }
+      ]
+    }
+  }
+]

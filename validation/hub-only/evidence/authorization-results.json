@@ -1,0 +1,764 @@
+{
+  "context": "hub-only-validation",
+  "hubOnly": true,
+  "checks": 57,
+  "failures": 0,
+  "observations": [
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-29df68d7a8e13053/tenant-a-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-29df68d7a8e13053/tenant-a-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "watch",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-29df68d7a8e13053/tenant-a-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "create",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-maintainer-81022281b77632fb/tenant-a-namespace\" of ClusterRole \"custom-vm-maintainer\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-maintainer-81022281b77632fb/tenant-a-namespace\" of ClusterRole \"custom-vm-maintainer\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "patch",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-maintainer-81022281b77632fb/tenant-a-namespace\" of ClusterRole \"custom-vm-maintainer\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-a-namespace",
+        "subresource": "start"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-maintainer-81022281b77632fb/tenant-a-namespace\" of ClusterRole \"custom-vm-maintainer\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-a-namespace",
+        "subresource": "stop"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-maintainer-81022281b77632fb/tenant-a-namespace\" of ClusterRole \"custom-vm-maintainer\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-a-namespace",
+        "subresource": "restart"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-maintainer-81022281b77632fb/tenant-a-namespace\" of ClusterRole \"custom-vm-maintainer\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "delete",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-a-namespace",
+        "subresource": "console"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-a-namespace",
+        "subresource": "vnc"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-a-namespace",
+        "subresource": "pause"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "create",
+        "resource": "virtualmachineinstancemigrations",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "get",
+        "resource": "secrets",
+        "group": "",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "create",
+        "resource": "rolebindings",
+        "group": "rbac.authorization.k8s.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "a",
+      "attributes": {
+        "verb": "list",
+        "resource": "namespaces",
+        "group": ""
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by ClusterRoleBinding \"tenant-a-fleet-view\" of ClusterRole \"acm-vm-fleet:view\" to Group \"tenant-a-operators\""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-330295ab3669b34c/tenant-b-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-b-operators\""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-330295ab3669b34c/tenant-b-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-b-operators\""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "watch",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-330295ab3669b34c/tenant-b-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-b-operators\""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "create",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "patch",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-b-namespace",
+        "subresource": "start"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-lifecycle-888fedcf40e5d3f9/tenant-b-namespace\" of ClusterRole \"custom-vm-lifecycle\" to Group \"tenant-b-operators\""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-b-namespace",
+        "subresource": "stop"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-lifecycle-888fedcf40e5d3f9/tenant-b-namespace\" of ClusterRole \"custom-vm-lifecycle\" to Group \"tenant-b-operators\""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-b-namespace",
+        "subresource": "restart"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"custom-vm-lifecycle-888fedcf40e5d3f9/tenant-b-namespace\" of ClusterRole \"custom-vm-lifecycle\" to Group \"tenant-b-operators\""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "delete",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-b-namespace",
+        "subresource": "console"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-b-namespace",
+        "subresource": "vnc"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-b-namespace",
+        "subresource": "pause"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "create",
+        "resource": "virtualmachineinstancemigrations",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "get",
+        "resource": "secrets",
+        "group": "",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "create",
+        "resource": "rolebindings",
+        "group": "rbac.authorization.k8s.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "b",
+      "attributes": {
+        "verb": "list",
+        "resource": "namespaces",
+        "group": ""
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by ClusterRoleBinding \"tenant-b-fleet-view\" of ClusterRole \"acm-vm-fleet:view\" to Group \"tenant-b-operators\""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-c50e7d231dee2a4d/tenant-c-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-c-viewers\""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-c50e7d231dee2a4d/tenant-c-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-c-viewers\""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "watch",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by RoleBinding \"kubevirt.io-view-c50e7d231dee2a4d/tenant-c-namespace\" of ClusterRole \"kubevirt.io:view\" to Group \"tenant-c-viewers\""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "create",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "patch",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-c-namespace",
+        "subresource": "start"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-c-namespace",
+        "subresource": "stop"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-c-namespace",
+        "subresource": "restart"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "delete",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-c-namespace",
+        "subresource": "console"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "get",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-c-namespace",
+        "subresource": "vnc"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "update",
+        "resource": "virtualmachineinstances",
+        "group": "subresources.kubevirt.io",
+        "namespace": "tenant-c-namespace",
+        "subresource": "pause"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "create",
+        "resource": "virtualmachineinstancemigrations",
+        "group": "kubevirt.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "get",
+        "resource": "secrets",
+        "group": "",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "create",
+        "resource": "rolebindings",
+        "group": "rbac.authorization.k8s.io",
+        "namespace": "tenant-c-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-a-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "list",
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "namespace": "tenant-b-namespace"
+      },
+      "expectedAllowed": false,
+      "allowed": false,
+      "passed": true,
+      "reason": ""
+    },
+    {
+      "tenant": "c",
+      "attributes": {
+        "verb": "list",
+        "resource": "namespaces",
+        "group": ""
+      },
+      "expectedAllowed": true,
+      "allowed": true,
+      "passed": true,
+      "reason": "RBAC: allowed by ClusterRoleBinding \"tenant-c-fleet-view\" of ClusterRole \"acm-vm-fleet:view\" to Group \"tenant-c-viewers\""
+    }
+  ]
+}

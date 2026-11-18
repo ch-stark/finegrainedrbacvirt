@@ -1,0 +1,16 @@
+{
+  "extraRuleObserved": true,
+  "extraRuleRemovedByPolicy": true,
+  "elapsedSeconds": 0.11,
+  "injectedRule": {
+    "apiGroups": [
+      "validation.example.com"
+    ],
+    "resources": [
+      "driftchecks"
+    ],
+    "verbs": [
+      "get"
+    ]
+  }
+}

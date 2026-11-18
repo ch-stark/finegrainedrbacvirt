@@ -1,0 +1,53 @@
+{
+  "date": "2026-11-18",
+  "identity": "kube:admin",
+  "ACM": "5.1.0-184",
+  "MCE": "5.1.0-193",
+  "OpenShift": "5.0.1",
+  "operators": {
+    "openshift-gitops-operator": [
+      {
+        "name": "openshift-gitops-operator.v1.22.3",
+        "version": "1.22.3",
+        "phase": "Succeeded"
+      }
+    ],
+    "openshift-cnv": [
+      {
+        "name": "kubevirt-hyperconverged-operator.v5.0.0",
+        "version": "5.0.0",
+        "phase": "Succeeded"
+      }
+    ]
+  },
+  "nodeCount": 3,
+  "nodeInstanceTypes": [
+    "m6a.2xlarge"
+  ],
+  "kvmAllocatable": [
+    "0",
+    "0",
+    "0"
+  ],
+  "policyGeneratorInit": {
+    "image": "registry.redhat.io/rhacm2/multicluster-operators-subscription-rhel9:v5.0",
+    "imageID": "registry.redhat.io/rhacm2/multicluster-operators-subscription-rhel9@sha256:01322ba0fd669d824779e6262319ceff43d0ded5b50c1c05f62b1cc82caee29e",
+    "exitCode": 0
+  },
+  "fleetViewNamespaceRules": [
+    {
+      "verbs": [
+        "get",
+        "list",
+        "watch"
+      ],
+      "apiGroups": [
+        ""
+      ],
+      "resources": [
+        "namespaces",
+        "configmaps"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+[
+  {
+    "name": "rbac-validation-b",
+    "namespace": "tenant-b-namespace",
+    "phase": "Scheduling",
+    "conditions": [
+      {
+        "lastProbeTime": "2026-11-18T13:52:25Z",
+        "lastTransitionTime": "2026-11-18T13:52:25Z",
+        "message": "Guest VM is not reported as running",
+        "reason": "GuestNotRunning",
+        "status": "False",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-11-18T13:52:25Z",
+        "message": "0/3 nodes are available: 1 node(s) were unschedulable, 2 Insufficient devices.kubevirt.io/kvm. no new claims to deallocate, preemption: 0/3 nodes are available: 3 Preemption is not helpful for scheduling.",
+        "reason": "Unschedulable",
+        "status": "False",
+        "type": "PodScheduled"
+      }
+    ]
+  }
+]

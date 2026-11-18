@@ -1,0 +1,39 @@
+{
+  "mraRemoved": true,
+  "roleBindingsRemaining": [],
+  "fleetBindingRemoved": true,
+  "checks": [
+    {
+      "attributes": {
+        "resource": "virtualmachines",
+        "group": "kubevirt.io",
+        "verb": "list",
+        "namespace": "tenant-b-namespace"
+      },
+      "allowed": false,
+      "expectedAllowed": false
+    },
+    {
+      "attributes": {
+        "resource": "virtualmachines",
+        "group": "subresources.kubevirt.io",
+        "verb": "update",
+        "namespace": "tenant-b-namespace",
+        "subresource": "start"
+      },
+      "allowed": false,
+      "expectedAllowed": false
+    },
+    {
+      "attributes": {
+        "resource": "namespaces",
+        "group": "",
+        "verb": "list"
+      },
+      "allowed": false,
+      "expectedAllowed": false
+    }
+  ],
+  "passed": true,
+  "elapsedSeconds": 1.1
+}
