@@ -1,85 +1,62 @@
-# Govern VM access across clusters with ACM 5.0
+# Govern VM access with ACM 5.0
 
-A virtual machine operator needs to restart an application server. A platform engineer needs to change its configuration. An auditor needs to inspect its state. Giving all three people the same virtualization role makes onboarding easy, but grants more access than their work requires.
+A **VM maintainer** needs to change a machine's configuration. A **lifecycle operator** needs to restart it. A **viewer** needs to inspect its state. Assigning the same broad virtualization role to all three gives people permissions their work does not require.
 
-The challenge grows when those responsibilities span several clusters. Manually maintained bindings are difficult to review consistently, and a successful deployment does not prove that access is limited to the intended tenant.
+Across several clusters, the problem is also consistency: which group can perform which operation, in which namespace, on which clusters? Keeping those decisions in Git makes them reviewable. Red Hat Advanced Cluster Management for Kubernetes (ACM) can distribute the role definitions and create the corresponding access assignments.
 
-This walkthrough shows platform engineers how to keep custom virtual machine permissions in Git, distribute their definitions with Red Hat Advanced Cluster Management for Kubernetes (ACM) governance, and assign them to groups within specific namespaces. Three tenants illustrate maintenance, lifecycle operations, and read-only access.
+This article presents an **ACM 5.0 reference design** for platform engineers. The [companion example](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/README.md) has passed local rendering, schema, and consistency checks. Live ACM deployment, console behavior, and revocation remain acceptance tests; this is not a report of a completed production deployment.
 
-The result is a repeatable access-management workflow: review the permission change, select the clusters, reconcile the roles, and verify both allowed and denied operations.
+## Choose three access tiers
 
-The repository includes a [Full Admin Fleet Virtualization RBAC example and README](https://github.com/ch-stark/finegrainedrbacvirt/blob/main/examplefulladmin/README.md). It demonstrates a broader administrator access model. The tenant-specific manifests used in this walkthrough are supplied separately in the [companion example](vm-rbac-example/README.md), including generated first-stage policies, an Argo CD project and application, and an authorization-check script. Keep the `vm-rbac-example` directory beside this Markdown file when sharing the walkthrough, and run the commands from that directory.
+Start with the operator-provided `kubevirt.io:view` role and add only the operations each team needs. The built-in `kubevirt.io:edit` role is broader: it includes VM deletion and console/VNC access, which these tiers deliberately omit. Inspect the installed built-in roles when assessing the effective permissions. [Virtualization role definitions](https://github.com/kubevirt/kubevirt/blob/main/pkg/virt-operator/resource/generate/rbac/cluster.go)
 
+| Access tier | Example group | Managed-cluster namespace | Additional role | Intended operations |
+| --- | --- | --- | --- | --- |
+| Maintainer | `tenant-a-operators` | `tenant-a-namespace` | `custom-vm-maintainer` | Create, update and patch VM objects; start, stop and restart |
+| Lifecycle operator | `tenant-b-operators` | `tenant-b-namespace` | `custom-vm-lifecycle` | Start, stop and restart existing VMs |
+| Viewer | `tenant-c-viewers` | `tenant-c-namespace` | None | Read virtualization resources |
 
-## Use ACM 5.0
+Every group also receives `kubevirt.io:view` in its assigned namespace. The file names use “tenant” to identify three example teams. The **tier** describes their permissions; network, storage, resource quotas, and admission controls are separate parts of a tenant boundary.
 
-This walkthrough targets **Red Hat Advanced Cluster Management for Kubernetes 5.0** and its documented custom-role workflow. Use an OpenShift Container Platform and OpenShift Virtualization combination supported by the [ACM 5.0 support matrix](https://access.redhat.com/articles/7149098).
+Kubernetes RBAC is additive. Other user or group bindings can expand these permissions, and the absence of `delete` does not make VM modification harmless. Workload creation and editing can provide indirect access to namespace data. [Kubernetes RBAC considerations](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
 
-The [ACM 5.0 security documentation](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro) describes feature configuration, built-in roles, custom-role discovery, and namespace-scoped role assignments. The examples below use those APIs and settings.
+Treat maintainers as trusted workload authors. Subject to the installed virtualization and admission configuration, VM specifications can reference namespace PVCs, Secrets and ConfigMaps, supply cloud-init content, and request devices. Review permitted references and device use before granting this tier. Where supported, admission rules such as a [ValidatingAdmissionPolicy](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/) can constrain selected VM fields; this example does not install those guardrails.
 
-## Understand the control flow
+VM object creation also does not supply every permission needed by a provisioning wizard, disk import, or network attachment workflow. Begin with pre-provisioned resources and test the exact workflow you intend to offer.
 
-The architecture has three responsibilities:
+## Separate role delivery from access assignment
 
-1. **Git and PolicyGenerator describe the desired state.** Kustomize runs PolicyGenerator to produce governance policies and their bindings.
-2. **Governance distributes role definitions.** One policy targets the hub; another targets explicitly selected managed clusters, also called spokes. The spoke policy also creates tenant namespaces.
-3. **Role assignments grant access.** Hub-side `MulticlusterRoleAssignment` resources reference roles, cluster placements, and target namespaces. Their controller creates the managed-cluster RBAC bindings. [MRA API definitions](https://github.com/stolostron/multicluster-role-assignment/blob/main/api/v1beta1/multiclusterroleassignment_types.go)
-
-“Policy-to-UI” is a useful description of this flow, rather than a separate API: policy distributes the role, the hub console discovers it, and a role assignment grants access. A discoverable role does not grant permissions until it is bound.
-
-The same role files feed both the hub and managed-cluster policies:
+The design uses governance policies for role definitions and `MulticlusterRoleAssignment` (MRA) resources for access grants:
 
 ```mermaid
 flowchart TD
-    Git[Reviewed Git configuration] --> Build[Kustomize and PolicyGenerator]
-    Build --> Policies[Governance policies on the hub]
-    Policies --> HubRoles[Custom roles on the hub]
-    Policies --> SpokeRoles[Custom roles and tenant namespaces on selected managed clusters]
-    Policies --> Assignments[Hub role assignments and fleet console bindings]
-    Assignments --> MRA[MulticlusterRoleAssignment controller]
-    MRA --> Bindings[RoleBindings in explicit tenant namespaces]
-    SpokeRoles --> Workload[Managed cluster API authorizes VM operations]
-    Bindings --> Workload
+    Git[Reviewed Git source] --> Argo[Argo CD with PolicyGenerator]
+    Argo --> Governance[Governance policies on the hub]
+    Governance --> Roles[Role definitions on hub and selected managed clusters]
+    Governance --> MRA[Hub MulticlusterRoleAssignment resources]
+    MRA --> Bindings[RoleBindings in explicit workload namespaces]
+    Roles --> API[Managed cluster API authorizes VM requests]
+    Bindings --> API
 ```
 
-The assignment policy stays disabled until the role and namespace baseline is ready. The controller creates bindings; the managed cluster API evaluates them when a user requests an operation.
+A hub role is available for discovery; a role binding is what grants access. The hub console grant is separate again: each group receives `acm-vm-fleet:view` on the hub, while its workload roles are bound in managed-cluster namespaces. The documented purpose of the fleet role is access to the virtualization console. It is **not a promise that all fleet metadata is hidden from other teams**. [ACM 5.0 role descriptions](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-roles-descriptions)
 
-Hub console access and managed-cluster workload access are separate grants. This example binds `acm-vm-fleet:view` on the hub and namespace-scoped workload roles on the managed clusters. It does not grant tenants permission to administer access assignments.
+The hub is excluded from workload placement. Even though the prerequisites include OpenShift Virtualization on the hub, these assignments give the example teams no access to hub-hosted VMs.
 
-## Choose the appropriate repository example
+The repository also contains a separate [full-admin example](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/examplefulladmin/README.md). Its wildcard role and cluster-wide assignment grant cluster-admin-equivalent access. Use the namespace-scoped companion files for the tiers described here.
 
-The [repository README](https://github.com/ch-stark/finegrainedrbacvirt/blob/main/examplefulladmin/README.md) documents the `examplefulladmin/` directory, its role stack, placement prerequisites, deployment, and optional roles.
+## Prepare the hub and selected clusters
 
-Its default `custom-vm-full-admin-role` grants every API group, resource, and verb, including non-resource URLs. The assignment omits `targetNamespaces`, making it cluster-wide on selected managed clusters. As the README explains, this is cluster-admin-equivalent access; adding `kubevirt.io:admin` or `acm-vm-extended:admin` does not restrict it.
+Use a supported product combination from the [ACM 5.0 support matrix](https://access.redhat.com/articles/7149098). Before proceeding, confirm:
 
-Use that example for groups authorized to administer entire clusters. For the tenant access model below, use the companion namespace-scoped assignments and limited custom roles. The repository's optional roles also require explicit review and configuration; their presence in the repository does not include them in the default deployment.
+- Governance and fine-grained virtualization RBAC are configured on the ACM 5.0 hub.
+- The self-managed hub retains the name `local-cluster`, which this example's placements select explicitly.
+- Supported OpenShift Virtualization installations and required built-in roles exist on the hub and intended managed clusters.
+- Users, groups, and memberships match across hub and managed clusters.
+- The `default` managed cluster set contains the hub and intended targets; otherwise adapt the set and binding together.
+- Red Hat OpenShift GitOps is installed on the hub, and the setup administrator can configure it and impersonate test identities.
 
-## Define what each tenant can do
-
-| Tenant | Identity group | Managed-cluster namespace | Assigned workload roles | Intended access |
-| --- | --- | --- | --- | --- |
-| A | `tenant-a-operators` | `tenant-a-namespace` | `kubevirt.io:view`, `custom-vm-maintainer` | Read VMs; create, update and patch VM objects; start, stop and restart |
-| B | `tenant-b-operators` | `tenant-b-namespace` | `kubevirt.io:view`, `custom-vm-lifecycle` | Read VMs; start, stop and restart |
-| C | `tenant-c-viewers` | `tenant-c-namespace` | `kubevirt.io:view` | Read virtualization resources |
-
-These custom roles add no VM deletion, console, VNC, pause, migration, secret access, or RBAC administration. The baseline role is the operator-provided `kubevirt.io:view`; inspect its installed definition when validating the complete permission set. [ACM 5.0 virtualization roles](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-roles-descriptions)
-
-Kubernetes permissions are additive. The expected restrictions apply only when other user or group bindings do not grant broader access. A missing `delete` permission is also not protection against damaging updates: a maintainer can still change a VM specification. Keep this tier restricted to trusted operators. [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
-
-VM object creation is deliberately narrower than a complete provisioning workflow. Creating disks, importing images, attaching networks, or using a console wizard can require additional permissions. Use pre-provisioned storage for the first test, then add individually reviewed permissions for your intended workflow.
-
-## Prepare the environment
-
-Before deploying, prepare:
-
-- An ACM 5.0 hub with governance and fine-grained RBAC for virtualization configured, including the documented self-managed `local-cluster` setup.
-- Supported OpenShift Virtualization installations on the hub and target managed clusters, with the required built-in roles present.
-- Consistent users, groups, and group memberships across hub and managed clusters.
-- Administrator access for setup and authorization to impersonate test identities for the validation commands.
-- Red Hat OpenShift GitOps on the hub. Configure its Argo CD instance with PolicyGenerator as shown below. For local rendering and review, install Kustomize and a pinned PolicyGenerator executable in your local plugin directory.
-- An existing managed cluster set. This example uses `default`; it must contain the hub and every intended target. Replace that set name and its binding together if needed.
-
-The fine-grained RBAC component is an entry in the `MultiClusterHub` component list:
+The feature component entry is:
 
 ```yaml
 spec:
@@ -89,50 +66,11 @@ spec:
         enabled: true
 ```
 
-Merge this entry into the existing `spec.overrides.components` list, preserving unrelated components and avoiding a duplicate entry. This is a configuration fragment, not a standalone resource. The setup documentation also describes identity alignment and hub access requirements. [ACM 5.0 virtualization RBAC setup](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-enable)
+Merge this fragment into the existing `MultiClusterHub` component list. Preserve unrelated entries and avoid duplicates. The [ACM 5.0 setup procedure](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-enable) documents the component and identity prerequisites.
 
-Confirm the served API before applying the assignments:
+## Define each role once
 
-```bash
-oc --context HUB api-resources --api-group=rbac.open-cluster-management.io
-oc --context HUB explain multiclusterroleassignment.spec \
-  --api-version=rbac.open-cluster-management.io/v1beta1
-```
-
-Replace `HUB` and `SPOKE` throughout with your kubeconfig context names.
-
-## Keep one source for the custom roles
-
-The tenant-scoped companion example uses this layout. Its paths are separate from the repository's `examplefulladmin/` directory:
-
-```text
-vm-rbac-example/
-├── bootstrap.yaml
-├── kustomization.yaml
-├── policy-generator.yaml
-├── roles/
-│   ├── custom-vm-lifecycle.yaml
-│   └── custom-vm-maintainer.yaml
-├── namespaces/
-│   └── tenant-{a,b,c}.yaml
-├── assignments/
-│   └── tenant-{a,b,c}.yaml
-├── fleet-access/
-│   └── tenant-{a,b,c}.yaml
-├── appproject.yaml
-├── application.yaml
-├── gitops/
-│   ├── argocd-policygenerator-patch.yaml
-│   ├── controller-policy-rbac.yaml
-│   └── policy-openshift-gitops-policygenerator.yaml
-├── rendered/
-│   └── vm-rbac.yaml
-└── verify-access.py
-```
-
-The brace notation abbreviates three separate files. Directory names describe resource purpose; file order is not a deployment dependency. Both role policies reference `roles/`, so there is no second copy of the permission rules to maintain.
-
-The lifecycle role contains only the additional start, stop, and restart permissions:
+The [lifecycle role](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/roles/custom-vm-lifecycle.yaml) contains only the additional operations:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -154,68 +92,47 @@ rules:
   - update
 ```
 
-The [maintainer role](vm-rbac-example/roles/custom-vm-maintainer.yaml) grants the same lifecycle operations and adds `create`, `update`, and `patch` on `kubevirt.io` virtual machine objects. The complete role remains in the example directory so the walkthrough has one authoritative manifest for that tier.
+The [maintainer role](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/roles/custom-vm-maintainer.yaml) adds `create`, `update`, and `patch` on `kubevirt.io` virtual machines. Read permissions come from the baseline view role.
 
-Both roles are layered on `kubevirt.io:view`, so neither repeats the baseline VM read rules. Lifecycle operations use the `subresources.kubevirt.io` API group and an `update` verb. Confirm these endpoints against the installed virtualization API. [KubeVirt API operations](https://kubevirt.io/api-reference/main/operations.html)
+The three labels follow the [documented custom-role workflow](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-mca-custom). A label alone does not install a propagation policy: the discovery-based approach in the documentation requires creating that policy. This design instead names its source files explicitly. `vm-rbac-hub-roles` manages hub definitions and `vm-rbac-spoke-baseline` manages managed-cluster definitions. Both read the same `roles/` directory. Do not deploy an additional discovery-based policy for these same objects.
 
-The three labels follow ACM 5.0's custom-role requirements. The `custom-role` label also supports the discovery-based propagation pattern documented there. This example instead distributes explicitly named Git files; do not introduce a second policy that manages the same role definitions. [ACM 5.0 custom-role workflow](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-mca-custom)
+The [generator configuration](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/policy-generator.yaml) also makes several scope decisions explicit:
 
-There is no `namespaces` rule in these workload roles. Namespace discovery is cluster-scoped, and a namespace-scoped RoleBinding cannot grant it. Handle any required cluster-level access as a separate, reviewed grant.
+- `mustonlyhave` treats extra rules in these role definitions as drift and remediates them. Additional metadata is permitted; namespace objects use `musthave`.
+- Hub and spoke policies have separate placements. The PolicySet groups policies without introducing another placement binding.
+- The assignment policy starts disabled, allowing role and namespace checks before access is granted.
+- `pruneObjectBehavior: None` retains objects when policies are removed. Revocation therefore requires an explicit transition.
 
-## Select the hub and opt in managed clusters
+## Make namespace scope visible in the assignment
 
-The [bootstrap manifest](vm-rbac-example/bootstrap.yaml) creates the `policies` namespace, binds the existing `default` managed cluster set, and defines two placements:
+MRAs live in the hub's `policies` management namespace in this example. Their workload scope comes from `targetNamespaces`, and their cluster scope comes from referenced placements. ACM's [MRA examples](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-mca-examples) demonstrate management namespaces other than the global-set namespace; that namespace name is not itself a workload-access boundary.
 
-| Placement | Selected clusters | Purpose |
-| --- | --- | --- |
-| `vm-rbac-hub` | `name=local-cluster` | Hub role definitions, assignments, and console bindings |
-| `vm-rbac-spokes` | `example.com/vm-rbac=enabled`, excluding `local-cluster` | Workload role definitions, tenant namespaces, and MRA target selection |
-
-Both placements are limited to the bound `default` cluster set. Apply bootstrap before the generated policies.
-
-Opt in only the intended managed clusters. For example:
-
-```bash
-oc --context HUB label managedcluster managed-cluster-01 \
-  example.com/vm-rbac=enabled
-oc --context HUB apply -f bootstrap.yaml
-oc --context HUB get placementdecision -n policies -o yaml
-```
-
-The label is applied to the hub's `ManagedCluster` object. Confirm that the hub placement selects only `local-cluster` and the spoke placement selects exactly the intended managed clusters. Control who can change these labels and placements: changing placement can change where access is granted.
-
-This positive selection avoids enrolling every newly imported cluster. It also excludes the hub from workload assignment even if someone adds the opt-in label to `local-cluster`.
-
-## Assign roles to explicit tenant namespaces
-
-All three MRA objects live in the hub's `policies` namespace. That management namespace does not determine workload scope. Every role assignment explicitly references the spoke placement and a target namespace.
-
-Tenant A's assignment is:
+The [lifecycle assignment](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/assignments/tenant-b.yaml) grants the baseline and additional role separately:
 
 ```yaml
 apiVersion: rbac.open-cluster-management.io/v1beta1
 kind: MulticlusterRoleAssignment
 metadata:
-  name: tenant-a-vm-access
+  name: tenant-b-vm-access
   namespace: policies
 spec:
   subject:
     kind: Group
-    name: tenant-a-operators
+    name: tenant-b-operators
   roleAssignments:
-  - name: tenant-a-role-1
+  - name: tenant-b-role-1
     clusterRole: kubevirt.io:view
     targetNamespaces:
-    - tenant-a-namespace
+    - tenant-b-namespace
     clusterSelection:
       type: placements
       placements:
       - name: vm-rbac-spokes
         namespace: policies
-  - name: tenant-a-role-2
-    clusterRole: custom-vm-maintainer
+  - name: tenant-b-role-2
+    clusterRole: custom-vm-lifecycle
     targetNamespaces:
-    - tenant-a-namespace
+    - tenant-b-namespace
     clusterSelection:
       type: placements
       placements:
@@ -223,332 +140,75 @@ spec:
         namespace: policies
 ```
 
-[Tenant B's assignment](vm-rbac-example/assignments/tenant-b.yaml) follows the same structure with `custom-vm-lifecycle` plus the baseline view role. [Tenant C's assignment](vm-rbac-example/assignments/tenant-c.yaml) assigns only the view role.
+**Keep `targetNamespaces` populated.** An omitted or empty value creates a cluster-wide binding instead of namespace-scoped RoleBindings. [ACM binding scope](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-mca-binding)
 
-**Keep `targetNamespaces` populated on every tenant assignment.** An omitted or empty value produces a ClusterRoleBinding rather than tenant-scoped RoleBindings. Review this field whenever adding an assignment. [ACM 5.0 MRA binding scope](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-mca-binding)
+The companion baseline creates the example namespaces. A tenant group receives no namespace-creation privilege, and these workload RoleBindings do not grant cluster-scoped namespace discovery.
 
-The spoke baseline policy creates the three target namespaces from the [namespace manifests](vm-rbac-example/namespaces/); for example:
+## Follow one rollout path
 
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: tenant-a-namespace
-```
-
-Namespace creation belongs to the platform workflow. A tenant receives no namespace-creation privilege through these assignments. Resource quotas, network isolation, storage policy, and admission controls remain separate parts of tenant setup.
-
-For hub console access, create a separate binding for each tenant group. [Tenant A's binding](vm-rbac-example/fleet-access/tenant-a.yaml) is:
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: tenant-a-fleet-view
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: acm-vm-fleet:view
-subjects:
-- kind: Group
-  apiGroup: rbac.authorization.k8s.io
-  name: tenant-a-operators
-```
-
-This binding targets the hub only. Do not copy it into the spoke policy or replace the workload roles with a cluster-wide administrator binding.
-
-## Generate policies without mixing their destinations
-
-The [PolicyGenerator configuration](vm-rbac-example/policy-generator.yaml) keeps each policy bound to its intended destination:
-
-```yaml
-apiVersion: policy.open-cluster-management.io/v1
-kind: PolicyGenerator
-metadata:
-  name: vm-rbac
-policyDefaults:
-  namespace: policies
-  remediationAction: enforce
-  complianceType: mustonlyhave
-  metadataComplianceType: musthave
-  pruneObjectBehavior: None
-  policySets:
-  - vm-rbac
-  generatePlacementWhenInSet: true
-policySetDefaults:
-  generatePolicySetPlacement: false
-policies:
-- name: vm-rbac-hub-roles
-  placement:
-    placementName: vm-rbac-hub
-  manifests:
-  - path: roles
-- name: vm-rbac-spoke-baseline
-  placement:
-    placementName: vm-rbac-spokes
-  manifests:
-  - path: roles
-  - path: namespaces
-    complianceType: musthave
-- name: vm-rbac-hub-assignments
-  disabled: true
-  placement:
-    placementName: vm-rbac-hub
-  manifests:
-  - path: assignments/tenant-a.yaml
-  - path: fleet-access/tenant-a.yaml
-  - path: assignments/tenant-b.yaml
-  - path: fleet-access/tenant-b.yaml
-  - path: assignments/tenant-c.yaml
-  - path: fleet-access/tenant-c.yaml
-policySets:
-- name: vm-rbac
-  description: VM roles and tenant assignments with separate policy placements
-placementBindingDefaults:
-  name: vm-rbac-binding
-```
-
-Three settings deserve attention:
-
-- `mustonlyhave` makes extra permission rules in these custom role definitions drift to remediate. `metadataComplianceType: musthave` permits additional metadata. Namespace manifests use `musthave`, so the policy can coexist with platform-managed namespace fields.
-- `generatePolicySetPlacement: false` leaves the PolicySet as a logical group. `generatePlacementWhenInSet: true` retains each policy's explicit placement. No binding targets the PolicySet itself.
-- `vm-rbac-hub-assignments` starts disabled. This provides a deliberate checkpoint before granting access.
-
-The policies retain managed objects when removed (`pruneObjectBehavior: None`). This avoids accidental namespace deletion and requires an explicit revocation workflow. Consult the [PolicyGenerator configuration reference](https://raw.githubusercontent.com/open-cluster-management-io/policy-generator-plugin/main/docs/policygenerator-reference.yaml) before changing placement or pruning behavior.
-
-The Kustomization invokes the generator:
-
-```yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-generators:
-- policy-generator.yaml
-```
-
-For local review and server-side validation, render from the example directory after installing the executable at `$KUSTOMIZE_PLUGIN_HOME/policy.open-cluster-management.io/v1/policygenerator/PolicyGenerator`:
+The article and its companion links use the fixed snapshot `acm5-rbac-reference-v1`. Check out that snapshot so the prose, manifests, and instructions stay aligned:
 
 ```bash
-mkdir -p rendered
-kustomize build --enable-alpha-plugins . > rendered/vm-rbac.yaml
+git clone --branch acm5-rbac-reference-v1 --single-branch \
+  https://github.com/ch-stark/finegrainedrbacvirt.git
+cd finegrainedrbacvirt/vm-rbac-example
+git switch -c vm-rbac-deployment
 ```
 
-The Application configured below runs PolicyGenerator against the source directory in Argo CD. The local `rendered/` output is a review artifact.
+Use your own branch or fork for configuration changes. Replace `HUB` and `SPOKE` below with kubeconfig context names.
 
-Inspect the rendered bindings. Hub policies must reference `vm-rbac-hub`; the spoke baseline must reference `vm-rbac-spokes`. There must be no PlacementBinding whose subject is the `vm-rbac` PolicySet.
-
-## Configure Argo CD to run PolicyGenerator
-
-ACM 5.0 documents PolicyGenerator integration with Red Hat OpenShift GitOps. Configure the operator-managed `ArgoCD` custom resource so the repository server can run the generator when it builds this repository. Patch the custom resource rather than editing the generated repository-server Deployment. [ACM 5.0 GitOps policy integration](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html-single/gitops)
-
-The [patch file](vm-rbac-example/gitops/argocd-policygenerator-patch.yaml) follows the documented init-container pattern. It copies PolicyGenerator from the ACM image into a shared volume, mounts that volume at Kustomize's plugin path, and sets the build option that permits executable plugins:
-
-```yaml
-spec:
-  kustomizeBuildOptions: --enable-alpha-plugins
-  repo:
-    env:
-    - name: KUSTOMIZE_PLUGIN_HOME
-      value: /etc/kustomize/plugin
-    initContainers:
-    - name: policy-generator-install
-      image: registry.redhat.io/rhacm2/multicluster-operators-subscription-rhel9:v5.0
-      command:
-      - /bin/bash
-      args:
-      - -c
-      - cp /policy-generator/PolicyGenerator-not-fips-compliant /policy-generator-tmp/PolicyGenerator
-      volumeMounts:
-      - name: policy-generator
-        mountPath: /policy-generator-tmp
-    volumeMounts:
-    - name: policy-generator
-      mountPath: /etc/kustomize/plugin/policy.open-cluster-management.io/v1/policygenerator
-    volumes:
-    - name: policy-generator
-      emptyDir: {}
-```
-
-This patch targets an Argo CD instance named `openshift-gitops` in the namespace of the same name. Adjust the instance, namespace, and controller service account if your installation uses different names. Ensure the repository server can pull the ACM image.
-
-Review the existing `spec.repo` lists and `spec.kustomizeBuildOptions` before applying. A JSON merge patch replaces arrays, so merge any existing environment variables, init containers, mounts, volumes, and build flags into the patch file first.
-
-After applying `bootstrap.yaml` from the placement step, configure Argo CD and its policy-management permissions:
+**1. Select clusters deliberately.** Apply the [bootstrap manifest](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/bootstrap.yaml) and opt in a managed cluster:
 
 ```bash
-oc --context HUB patch argocd openshift-gitops -n openshift-gitops \
-  --type=merge --patch-file=gitops/argocd-policygenerator-patch.yaml
-oc --context HUB apply -f gitops/controller-policy-rbac.yaml
-oc --context HUB rollout status deployment/openshift-gitops-repo-server \
-  -n openshift-gitops
+oc --context HUB apply -f bootstrap.yaml
+oc --context HUB label managedcluster managed-cluster-01 \
+  example.com/vm-rbac=enabled
+oc --context HUB get placementdecision -n policies -o yaml
 ```
 
-The [controller RBAC file](vm-rbac-example/gitops/controller-policy-rbac.yaml) grants the application controller access to `Policy`, `PolicySet`, and `PlacementBinding` resources in `policies`. Bootstrap creates the placements separately, so this example does not give the controller cluster-wide RBAC administration.
+Confirm that `vm-rbac-hub` selects only `local-cluster` and `vm-rbac-spokes` selects exactly the intended managed clusters. `example.com/vm-rbac` is a valid illustrative label; substitute your organization-owned prefix consistently in the label and selector if appropriate. Restrict who can edit placements and selection labels because those changes affect access.
 
-### Configure the same integration with an ACM policy
+**2. Configure PolicyGenerator in Argo CD.** The supported [ACM 5.0 GitOps integration](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html-single/gitops) patches the operator-managed ArgoCD resource. Its repository-server init container installs the generator, its shared volume supplies the plugin, and `kustomizeBuildOptions` permits it to run.
 
-You can also govern the Argo CD configuration itself. The community [OpenShift GitOps PolicyGenerator policy](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/CM-Configuration-Management/policy-openshift-gitops-policygenerator.yaml) shows this pattern: a ConfigurationPolicy configures the ArgoCD resource and supplies application-controller permissions. Its init container obtains the binary from the ACM CLI image using a template lookup.
+Follow the [direct configuration procedure](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/README.md#configure-policygenerator-in-argo-cd). It contains the full patch and controller RBAC. Merge existing repository settings into the patch before applying it, because JSON merge patches replace arrays.
 
-The companion [setup policy](vm-rbac-example/gitops/policy-openshift-gitops-policygenerator.yaml) adapts that approach for this walkthrough. It uses the ACM 5.0 image and copy command shown above, the namespace-scoped controller permissions, and a PlacementBinding targeting only `vm-rbac-hub`. It starts in `inform` mode for review.
+This example deliberately grants the application controller a Role in `policies`, rather than the broader ClusterRoleBinding shown in the documentation. It manages only policy resources there; the administrator creates placements separately. The [governance-policy alternative](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/README.md#configure-the-integration-with-a-governance-policy) and the linked community policy are available in the companion guide.
 
-Use this policy **instead of the direct patch commands** when you want governance to manage the integration:
+**3. Review and sync the baseline.** Configure the [Application](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/application.yaml) and [AppProject](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/appproject.yaml) for your repository. Set `targetRevision` to a reviewed commit SHA. The Application points at `vm-rbac-example`, so Argo CD runs the source Kustomization and PolicyGenerator.
 
-```bash
-oc --context HUB apply -f gitops/policy-openshift-gitops-policygenerator.yaml
-oc --context HUB get policy vm-rbac-policygenerator-setup -n policies -o yaml
-```
+Create the project and Application, then manually sync with `vm-rbac-hub-assignments` still disabled. Check the per-cluster policy status and inspect every intended managed cluster for both custom roles, `kubevirt.io:view`, and the three namespaces. A successful Argo CD sync does not establish downstream compliance.
 
-Review the reported differences against your existing Argo CD configuration. Then enforce the reviewed configuration and wait for compliance and the repository-server rollout:
+**4. Grant access after the baseline is ready.** Change the assignment policy to `disabled: false`, review and commit the change, update the Application revision, and manually sync again. Check MRA status and inspect the resulting RoleBinding subjects, role references, and namespaces. The [complete rollout commands](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/README.md#deploy-the-source-through-argo-cd) remain with the manifests.
 
-```bash
-oc --context HUB patch policy vm-rbac-policygenerator-setup -n policies \
-  --type=merge -p '{"spec":{"remediationAction":"enforce"}}'
-oc --context HUB wait policy/vm-rbac-policygenerator-setup -n policies \
-  --for=jsonpath='{.status.compliant}'=Compliant --timeout=5m
-oc --context HUB rollout status deployment/openshift-gitops-repo-server \
-  -n openshift-gitops
-```
+## Verify capabilities and boundaries
 
-Apply this setup policy directly with `oc`: it is ordinary policy YAML and does not require an already-configured PolicyGenerator. Keep it outside the workload generator's manifest inputs.
-
-### Point the Application at the source Kustomization
-
-The Application must select the directory containing `kustomization.yaml` and `policy-generator.yaml`:
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: vm-rbac
-  namespace: openshift-gitops
-spec:
-  project: vm-rbac
-  source:
-    repoURL: https://github.com/ch-stark/finegrainedrbacvirt.git
-    targetRevision: REPLACE_WITH_REVIEWED_COMMIT_SHA
-    path: vm-rbac-example
-    kustomize: {}
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: policies
-```
-
-Set `targetRevision` to the reviewed commit SHA containing your source files. Adapt the [AppProject](vm-rbac-example/appproject.yaml) to your approved repository and hub destination, then create both resources:
-
-```bash
-oc --context HUB apply -f appproject.yaml
-oc --context HUB apply -f application.yaml
-```
-
-Argo CD now invokes Kustomize with PolicyGenerator in the configured repository server and synchronizes the generated policies to the hub. Keep initial synchronization manual. Argo CD's `Synced` status describes the hub resources; confirm ACM compliance and assignment status separately. The documented [policy health-check examples](https://github.com/open-cluster-management-io/policy-collection/blob/main/stable/CM-Configuration-Management/argocd-policy-healthchecks.yaml) can also improve the policy status displayed in Argo CD.
-
-## Deploy in two stages
-
-First validate the locally generated resources, then manually sync the Argo CD Application with the assignment policy disabled:
-
-```bash
-oc --context HUB apply --dry-run=server -f rendered/vm-rbac.yaml
-```
-
-In the Argo CD console, sync the `vm-rbac` Application. Then check the spoke policy's per-cluster compliance and inspect each target cluster:
-
-```bash
-oc --context HUB get policy vm-rbac-spoke-baseline -n policies -o yaml
-oc --context SPOKE get clusterrole custom-vm-lifecycle custom-vm-maintainer
-oc --context SPOKE get namespace \
-  tenant-a-namespace tenant-b-namespace tenant-c-namespace
-oc --context SPOKE get clusterrole kubevirt.io:view -o yaml
-```
-
-A compliant policy on the hub does not prove that all managed clusters are ready. Wait for the role and namespace baseline on every selected cluster. Also confirm the custom roles exist on the hub for discovery.
-
-Next, change `disabled: true` to `disabled: false` on the assignment policy. Review and commit that source change, update the Application to the new reviewed commit SHA, and manually sync it. Argo CD reruns PolicyGenerator. Validate the raw assignment files against the installed hub API as well:
-
-```bash
-oc --context HUB apply --dry-run=server -f assignments/
-oc --context HUB get multiclusterroleassignments -n policies -o yaml
-oc --context SPOKE get rolebindings -n tenant-b-namespace -o yaml
-```
-
-Inspect each assignment's status. On the managed cluster, verify the RoleBinding's subject, role reference, and namespace rather than relying on a generated binding name.
-
-## Verify authorization and the user experience
-
-The companion configuration has been rendered locally with Kustomize v5.8.1 and upstream PolicyGenerator v1.19.0, and its MRA manifests have been checked against the upstream `v1beta1` schema. The checks below define expected cluster behavior; they are not a record of a completed ACM deployment. Record your exact product versions and observed results when validating your environment.
-
-Test with identities that have only the intended group memberships. An administrator running the commands without impersonation will see the administrator's access.
-
-For Tenant B, a lifecycle operation should be permitted:
-
-```bash
-oc --context SPOKE auth can-i update \
-  virtualmachines.subresources.kubevirt.io --subresource=start \
-  -n tenant-b-namespace --as=rbac-validation \
-  --as-group=tenant-b-operators --as-group=system:authenticated
-```
-
-Expected answer: `yes`. VM creation and another tenant's inventory should be denied:
-
-```bash
-oc --context SPOKE auth can-i create virtualmachines.kubevirt.io \
-  -n tenant-b-namespace --as=rbac-validation \
-  --as-group=tenant-b-operators --as-group=system:authenticated
-
-oc --context SPOKE auth can-i list virtualmachines.kubevirt.io \
-  -n tenant-a-namespace --as=rbac-validation \
-  --as-group=tenant-b-operators --as-group=system:authenticated
-```
-
-Expected answer to both: `no`. A denial normally returns exit status 1; account for that in automation. The companion [authorization-check script](vm-rbac-example/verify-access.py) checks all three tiers, including cross-tenant denials:
+Run the [authorization script](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/verify-access.py) against each selected managed cluster:
 
 ```bash
 python3 verify-access.py SPOKE
 ```
 
-Run it on every selected managed cluster. Then sign in through the hub console as real users from each group and test against disposable workloads:
+It queries expected permissions for all three tiers, including cross-namespace denials. It does not perform VM operations or test the console. Test with actual users as well: an administrator's own access and a synthetic identity's limited group list are not substitutes for real group membership.
 
-| Check | Tenant A | Tenant B | Tenant C |
+| Acceptance check | Maintainer | Lifecycle operator | Viewer |
 | --- | --- | --- | --- |
-| View VMs in the assigned namespace | Allowed | Allowed | Allowed |
-| Start, stop and restart an existing VM | Allowed | Allowed | Denied |
-| Create or change a VM object using the supported test workflow | Allowed | Denied | Denied |
-| Delete a VM or open its console | Denied | Denied | Denied |
-| View VMs in another tenant's namespace | Denied | Denied | Denied |
+| Read VMs in the assigned namespace | Allowed | Allowed | Allowed |
+| Start, stop and restart existing VMs | Allowed | Allowed | Denied |
+| Create or modify VM objects with approved resources | Allowed | Denied | Denied |
+| Delete VMs or use console/VNC endpoints | Denied | Denied | Denied |
+| Read another team's VMs through its managed-cluster API | Denied | Denied | Denied |
+| Find another team's VMs through hub inventory, search, or direct details links | Must not expose unauthorized VM data | Must not expose unauthorized VM data | Must not expose unauthorized VM data |
 
-These are acceptance criteria. Check API responses as well as whether console actions are available. An authorization check cannot establish that storage, admission, networking, or a multi-step console workflow will succeed. Test each intended operation, inspect audit records for unexpected access, and repeat the denial tests with actual user identities.
+These are acceptance criteria, not recorded results. Exercise real operations on disposable workloads and check responses, not only whether buttons appear. Storage, admission, and networking can still reject an operation that RBAC permits.
 
-## Troubleshoot the layer that failed
+For console validation, sign in as the lifecycle operator and search for a known maintainer-team VM by name and namespace. Try inventory filters and a saved direct details link. Repeat for the other teams. Separately record any visible cluster names, namespace names, or counts, and compare them with your organization's metadata-visibility requirements. Namespace-scoped workload bindings alone do not guarantee that all fleet metadata is confidential. If the shared console exposes metadata outside your allowed scope, this design does not meet that requirement without additional controls or a different access path.
 
-| Symptom | Check |
-| --- | --- |
-| Generator cannot load in Argo CD | Init-container completion, image pull access, executable volume mount, `KUSTOMIZE_PLUGIN_HOME`, and `kustomizeBuildOptions: --enable-alpha-plugins` |
-| Placement selects no clusters | Cluster set membership, its namespace binding, opt-in labels, cluster health, and PlacementDecision objects |
-| Role differs on a managed cluster | Spoke policy compliance and its ConfigurationPolicy messages; check for another controller managing the same role |
-| Role is missing from the console | Hub role existence, required labels, feature configuration, and the user's hub console binding |
-| Assignment fails or grants nothing | Installed MRA schema, assignment status, referenced placement, role existence, and target namespace existence |
-| User has too much access | Actual identity-provider groups, all RoleBindings and ClusterRoleBindings, and any assignment with empty target namespaces |
-| Authorization succeeds but VM operation fails | Exact failing API request, admission messages, workload state, and storage or network prerequisites |
+The [validation record](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/validation-results.md) separates local checks from pending deployment evidence. Record exact product versions, the source commit, MRA status, resulting RoleBindings, console/search observations, and successful revocation before describing your deployment as validated.
 
-## Onboard and revoke access deliberately
+## Keep the boundary after rollout
 
-For a new tenant, create its namespace manifest, group-specific assignment, and hub fleet-access binding. Add the namespace to the spoke baseline and both hub files to the assignment policy. Deploy the namespace first, then the assignment, and extend the authorization tests before promotion.
+Grant changes, onboarding, revocation, and placement changes all need the same review discipline. With object retention configured, deleting a Git file or disabling a policy is insufficient proof that access disappeared.
 
-For revocation, keep the relevant files in the generator and temporarily set `complianceType: mustnothave` on that tenant's assignment and fleet-access manifest entries. For Tenant B, those entries become:
+The [revocation procedure](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/README.md#onboard-and-revoke-access) uses a temporary `mustnothave` transition, then checks hub and managed-cluster cleanup before files are removed. The companion guide also contains [troubleshooting](https://github.com/ch-stark/finegrainedrbacvirt/blob/acm5-rbac-reference-v1/vm-rbac-example/README.md#troubleshoot-the-layer-that-failed).
 
-```yaml
-- path: assignments/tenant-b.yaml
-  complianceType: mustnothave
-- path: fleet-access/tenant-b.yaml
-  complianceType: mustnothave
-```
-
-Commit this source change, update the Application to the reviewed commit SHA, and sync the transition while the assignment policy remains enabled. Verify deletion of the hub MRA and hub console binding, then confirm that the MRA controller has removed the managed-cluster bindings and that access checks now deny the former grants. Account for other bindings and group memberships when interpreting those checks.
-
-Only after confirming revocation should you remove those entries and files. Retain tenant namespaces and workloads until a separate approved offboarding process handles them. Removing a file or disabling a policy alone does not revoke existing access with the retention settings in this example.
-
-Keep managed clusters reachable during planned revocation and verify the outcome on each one. Treat placement changes as access changes, including checks for permissions left on previously selected clusters.
-
-## Make access review repeatable
-
-Custom roles are useful when a built-in role grants more than a team needs. Their value depends on an explicit scope and a verification routine that proves restrictions as well as capabilities.
-
-Start with one managed cluster and disposable workloads. Use the [companion example](vm-rbac-example/README.md) to render the policies, confirm the selected destinations, and run the permission matrix. Promote the reviewed configuration only after the real-user workflow and revocation checks pass. Keep those checks with the repository so the next tenant, product upgrade, or role change goes through the same review.
+Start with one managed cluster and disposable VMs. Confirm the selected destinations, prove the permission and visibility boundaries, and record the results. That gives the next team a reviewed role definition and a concrete validation process to reuse.

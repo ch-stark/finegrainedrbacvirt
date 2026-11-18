@@ -1,44 +1,87 @@
-# Companion example for Govern tenant VM access across clusters
+# ACM 5.0 VM access reference implementation
 
-This example accompanies [Govern VM access across clusters with ACM 5.0](../virtrbacblog_v2.md). Its product baseline is ACM 5.0. The generated policy starts with assignments disabled; it does not grant tenant access until you explicitly enable that policy and deploy the resulting change.
+This runbook accompanies [Govern VM access with ACM 5.0](../virtrbacblog_v2.md). It implements three permission tiers for separate example teams. The namespaces, groups, and file names retain the `tenant-a`, `tenant-b`, and `tenant-c` identifiers used in the manifests.
 
-## Repository reference
+The source snapshot is tagged `acm5-rbac-reference-v1`. The article links to that snapshot; use a new reviewed commit for your deployment changes. The assignment policy starts disabled. There are no recorded live ACM results for this reference implementation; the [validation record](validation-results.md) distinguishes local checks from pending cluster tests.
 
-The public [Full Admin Fleet Virtualization RBAC README](../examplefulladmin/README.md) documents the separate `examplefulladmin/` deployment. Its wildcard role and unscoped assignment grant cluster-admin-equivalent access. This companion directory implements the blog's namespace-scoped tenant model and uses different paths and role names.
+## File map
 
-## What was checked locally
+| Path | Purpose |
+| --- | --- |
+| `bootstrap.yaml` | Management namespace, cluster-set binding, hub/spoke placements |
+| `roles/` | One source for both custom role definitions |
+| `namespaces/` | Managed-cluster workload namespaces |
+| `assignments/` | Hub MRA objects with explicit target namespaces |
+| `fleet-access/` | Hub fleet-console bindings |
+| `policy-generator.yaml`, `kustomization.yaml` | Governance generation and routing |
+| `gitops/` | Argo CD patch, scoped controller RBAC, alternative setup policy |
+| `application.yaml`, `appproject.yaml` | Source-based GitOps delivery |
+| `rendered/vm-rbac.yaml` | Local first-stage review output |
+| `verify-access.py` | Managed-cluster authorization queries |
+| `validation-results.md` | Environment and operational evidence template |
 
-On 10 November 2026, the example rendered successfully with Kustomize v5.8.1 and upstream PolicyGenerator v1.19.0. These describe the local authoring tools, not a Red Hat support certification for that combination.
+The separate [full-admin example](../examplefulladmin/README.md) grants cluster-admin-equivalent access through a wildcard role and unscoped assignment. It is a different permission model.
 
-Checks passed for all three MRA manifests against the upstream v1beta1 CRD, all five assignments having explicit namespaces, separate hub and spoke routing, no PolicySet placement binding, identical role definitions at both destinations, strict role-rule compliance, namespace coexistence, object retention, and the disabled assignment gate. The authorization script passed syntax validation.
+## Prepare the environment
 
-The included `rendered/vm-rbac.yaml` is a local review artifact for the first stage. Rebuild it when editing the source. The Application points at `vm-rbac-example/` and runs PolicyGenerator inside the configured Argo CD repository server; it does not synchronize the `rendered/` directory.
+Follow the [ACM 5.0 virtualization RBAC setup](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html/secure_clusters/securing-cluster-intro#fine-grain-enable) and [support matrix](https://access.redhat.com/articles/7149098). Configure governance and the `fine-grained-rbac` component. Preserve existing component entries when merging the setting.
 
-## What must be validated on ACM 5.0 before publication or production use
+Keep the self-managed hub named `local-cluster`; this reference does not support renaming that object. Install supported OpenShift Virtualization on the hub and targets, align identities and memberships, and confirm the built-in roles exist. This design excludes hub-hosted VMs from the workload grants.
 
-No connected ACM environment was used. The following remain release gates for calling this a tested production implementation:
+Commands below run from `vm-rbac-example/`. Replace `HUB` and `SPOKE` with kubeconfig contexts. Use an administrator for setup, with authorization to impersonate test identities for validation.
 
-1. Record exact ACM, OpenShift, OpenShift Virtualization, GitOps, and build-tool versions. Verify the supported product combination.
-2. Apply server-side validation against the installed CRDs. Confirm the feature configuration, governance add-ons, matching identities, and baseline roles.
-3. Confirm cluster-set membership and PlacementDecision output; test first on one disposable managed cluster.
-4. Confirm role and namespace policy compliance before enabling the assignment policy.
-5. Run `python3 verify-access.py MANAGED_CONTEXT` on every target cluster with an authorized administrator identity. Record results. The script makes authorization queries; it does not perform VM operations.
-6. Test real-user hub console access, CLI lifecycle operations, VM creation and modification with the intended storage/network workflow, and denied operations. Inspect audit records. A hidden button is insufficient evidence of denial.
-7. Test revocation, including MRA deletion, downstream binding cleanup, and negative authorization checks. Verify access on previously targeted clusters after placement changes.
-8. Test drift remediation on an example-owned custom role. Confirm no other policy or operator owns the same definition.
-9. Configure and verify the Argo CD init container, plugin mount, build options, controller permissions, and AppProject. Test both rollout stages through source-based GitOps delivery.
+```bash
+oc --context HUB api-resources --api-group=rbac.open-cluster-management.io
+oc --context HUB explain multiclusterroleassignment.spec \
+  --api-version=rbac.open-cluster-management.io/v1beta1
+```
 
-Add a short tested-environment note and verified results to the blog after these pass. Do not invent console screenshots, timings, customer outcomes, or cluster-test results.
+The existing `default` managed cluster set must contain the hub and selected targets. If it does not, adapt both the set reference and binding. Apply bootstrap and opt in only intended clusters:
 
-## Run the example
+```bash
+oc --context HUB apply -f bootstrap.yaml
+oc --context HUB label managedcluster managed-cluster-01 \
+  example.com/vm-rbac=enabled
+oc --context HUB get placementdecision -n policies -o yaml
+```
 
-Follow the blog in order. Commands are run from this directory. Replace HUB and SPOKE with actual kubeconfig context names. The `default` managed cluster set must already exist and contain the hub and selected managed clusters; use a different set consistently if needed.
+Check exact decisions for both placements. `vm-rbac-hub` must select only `local-cluster`; `vm-rbac-spokes` must select only approved targets. The `example.com` label prefix is illustrative and valid; change the label and selector together if using your own prefix.
 
 ## Configure PolicyGenerator in Argo CD
 
-Follow the documented [ACM 5.0 GitOps policy integration](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html-single/gitops). Apply bootstrap first to create the `policies` namespace and hub/spoke placements.
+This is the primary setup path. Follow the documented [ACM 5.0 GitOps policy integration](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html-single/gitops). Configure the `ArgoCD` custom resource; the GitOps operator manages the repository-server Deployment.
 
-For a direct configuration change, review `gitops/argocd-policygenerator-patch.yaml`. Preserve any existing repository environment variables, init containers, mounts, volumes, and build options by merging them into the patch before applying it; JSON merge patches replace arrays.
+The [patch file](gitops/argocd-policygenerator-patch.yaml) contains:
+
+```yaml
+spec:
+  kustomizeBuildOptions: --enable-alpha-plugins
+  repo:
+    env:
+    - name: KUSTOMIZE_PLUGIN_HOME
+      value: /etc/kustomize/plugin
+    initContainers:
+    - name: policy-generator-install
+      image: registry.redhat.io/rhacm2/multicluster-operators-subscription-rhel9:v5.0
+      command:
+      - /bin/bash
+      args:
+      - -c
+      - cp /policy-generator/PolicyGenerator-not-fips-compliant /policy-generator-tmp/PolicyGenerator
+      volumeMounts:
+      - name: policy-generator
+        mountPath: /policy-generator-tmp
+    volumeMounts:
+    - name: policy-generator
+      mountPath: /etc/kustomize/plugin/policy.open-cluster-management.io/v1/policygenerator
+    volumes:
+    - name: policy-generator
+      emptyDir: {}
+```
+
+The documented binary is copied from the ACM 5.0 subscription image into a shared volume. The repository server receives the plugin path and `--enable-alpha-plugins` build option. Ensure the image can be pulled. Adapt Argo CD instance names, namespace, and service-account references where needed.
+
+Inspect existing `spec.repo` lists and `spec.kustomizeBuildOptions` first. A JSON merge patch replaces arrays: merge existing environment variables, init containers, mounts, volumes, and build flags into the patch file before applying it.
 
 ```bash
 oc --context HUB patch argocd openshift-gitops -n openshift-gitops \
@@ -48,26 +91,95 @@ oc --context HUB rollout status deployment/openshift-gitops-repo-server \
   -n openshift-gitops
 ```
 
-The patch installs the binary from the ACM 5.0 image, mounts its plugin directory, sets `KUSTOMIZE_PLUGIN_HOME`, and configures `kustomizeBuildOptions: --enable-alpha-plugins`. Adjust instance names and registry access for your environment. The Role and RoleBinding grant the application controller access to policy resources in `policies`; bootstrap creates placements separately.
+Confirm the operator has reconciled the changed ArgoCD resource and that the new repository-server pod's `policy-generator-install` init container completed. A rollout command that returns before reconciliation starts is not sufficient evidence of the new configuration. Inspect the new pod's init-container status and mounted configuration if generation fails.
 
-Alternatively, apply `gitops/policy-openshift-gitops-policygenerator.yaml` directly with `oc`. This adaptation of the community [PolicyGenerator integration policy](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/CM-Configuration-Management/policy-openshift-gitops-policygenerator.yaml) configures the same ArgoCD resource and controller permissions through governance. It starts in `inform` mode and binds only to `vm-rbac-hub`. Review its differences, change the parent Policy to `enforce`, and wait for compliance and the repository-server rollout. Choose this policy or the direct patch route to manage the integration.
+The [controller Role and RoleBinding](gitops/controller-policy-rbac.yaml) are a deliberate narrowing of the documentation's cluster-wide example. They grant access to `Policy`, `PolicySet`, and `PlacementBinding` resources only in `policies`. Bootstrap resources are applied separately by the administrator, so the controller does not need to create placements or administer workload RBAC for this example.
 
-These setup files are deliberately outside the workload generator inputs. Apply them directly before creating the workload Application.
+## Configure the integration with a governance policy
+
+You can also govern the Argo CD configuration itself. The community [OpenShift GitOps PolicyGenerator policy](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/CM-Configuration-Management/policy-openshift-gitops-policygenerator.yaml) shows this pattern: a ConfigurationPolicy configures the ArgoCD resource and supplies application-controller permissions. Its init container obtains the binary from the ACM CLI image using a template lookup.
+
+The companion [setup policy](gitops/policy-openshift-gitops-policygenerator.yaml) adapts that approach for this walkthrough. It uses the ACM 5.0 image and copy command shown above, the namespace-scoped controller permissions, and a PlacementBinding targeting only `vm-rbac-hub`. It starts in `inform` mode for review.
+
+Use this policy **instead of the direct patch commands** when you want governance to manage the integration:
+
+```bash
+oc --context HUB apply -f gitops/policy-openshift-gitops-policygenerator.yaml
+oc --context HUB get policy vm-rbac-policygenerator-setup -n policies -o yaml
+```
+
+Review the reported differences against your existing Argo CD configuration. Then enforce the reviewed configuration and wait for compliance and the repository-server rollout:
+
+```bash
+oc --context HUB patch policy vm-rbac-policygenerator-setup -n policies \
+  --type=merge -p '{"spec":{"remediationAction":"enforce"}}'
+oc --context HUB wait policy/vm-rbac-policygenerator-setup -n policies \
+  --for=jsonpath='{.status.compliant}'=Compliant --timeout=5m
+oc --context HUB rollout status deployment/openshift-gitops-repo-server \
+  -n openshift-gitops
+```
+
+Apply this setup policy directly with `oc`: it is ordinary policy YAML and does not require an already-configured PolicyGenerator. Keep it outside the workload generator's manifest inputs.
 
 ## Deploy the source through Argo CD
 
-`application.yaml` points at this repository's `vm-rbac-example` Kustomization. Set its reviewed commit SHA and adjust the source repository in both the Application and AppProject if deploying from a fork.
+The [Application](application.yaml) points to this repository's `vm-rbac-example` Kustomization. Set `targetRevision` to the reviewed commit SHA. If using a fork, update the repository in both the Application and [AppProject](appproject.yaml). You can identify your checked-out source commit with:
+
+```bash
+git rev-parse HEAD
+```
+
+Argo CD runs PolicyGenerator in its configured repository server. The `rendered/` subdirectory is a local preview, not the Application source. Create the project and Application:
 
 ```bash
 oc --context HUB apply -f appproject.yaml
 oc --context HUB apply -f application.yaml
 ```
 
-Manually sync the Application with `vm-rbac-hub-assignments` disabled. Confirm role and namespace compliance on every selected cluster, then commit the change to `disabled: false`, update the Application revision to that reviewed commit, and manually sync again. Argo CD runs PolicyGenerator for each source revision.
+Keep synchronization manual for both rollout stages.
+
+### Stage one deploys roles and namespaces
+
+Leave `vm-rbac-hub-assignments` disabled. Render locally if desired, validate the output against the hub API, and manually sync the Application:
+
+```bash
+oc --context HUB apply --dry-run=server -f rendered/vm-rbac.yaml
+```
+
+If source changes were made, regenerate the local output before validating it. After Argo CD synchronization, inspect the baseline on every selected managed cluster:
+
+```bash
+oc --context HUB get policy vm-rbac-spoke-baseline -n policies -o yaml
+oc --context HUB get policy vm-rbac-hub-roles -n policies -o yaml
+oc --context SPOKE get clusterrole custom-vm-lifecycle custom-vm-maintainer
+oc --context SPOKE get namespace \
+  tenant-a-namespace tenant-b-namespace tenant-c-namespace
+oc --context SPOKE get clusterrole kubevirt.io:view -o yaml
+```
+
+Confirm that the hub role definitions also exist. Inspect per-cluster policy compliance; Argo CD `Synced` status alone does not verify propagation.
+
+### Stage two grants access
+
+Once the baseline is ready, change the assignment policy from `disabled: true` to `disabled: false`. Review, commit, and push that source change. Update the Application to the new reviewed commit SHA, then manually sync it.
+
+Validate the assignment files against the installed API and inspect the result:
+
+```bash
+oc --context HUB apply --dry-run=server -f assignments/
+oc --context HUB get multiclusterroleassignments -n policies -o yaml
+oc --context SPOKE get rolebindings -n tenant-b-namespace -o yaml
+```
+
+For every MRA, inspect status and cluster selection. For every generated RoleBinding, inspect the subject, role reference, and namespace. Do not assume a generated resource name. In addition, confirm that the hub console bindings reference only `acm-vm-fleet:view` for the intended groups.
+
+The [policy health-check example](https://github.com/open-cluster-management-io/policy-collection/blob/main/stable/CM-Configuration-Management/argocd-policy-healthchecks.yaml) can improve policy status shown in Argo CD. It does not replace direct downstream validation.
 
 ## Render locally for review
 
-For a local preview, install a reviewed PolicyGenerator executable at:
+The source previously rendered with Kustomize v5.8.1 and upstream PolicyGenerator v1.19.0. Those are authoring-tool versions, not a Red Hat support certification of the combination or a live test of the ACM image.
+
+Install a reviewed executable at:
 
 ```text
 $KUSTOMIZE_PLUGIN_HOME/policy.open-cluster-management.io/v1/policygenerator/PolicyGenerator
@@ -80,6 +192,53 @@ mkdir -p rendered
 kustomize build --enable-alpha-plugins . > rendered/vm-rbac.yaml
 ```
 
-This local preview does not configure the Argo CD repository server. The Argo CD integration above is required for the source-based Application.
+Confirm that the hub policy bindings reference `vm-rbac-hub`, the spoke baseline references `vm-rbac-spokes`, and no PlacementBinding targets the PolicySet. The setup-policy files under `gitops/` are deliberately outside the workload generator inputs.
 
-The examples retain objects when policy is deleted. Follow the blog's explicit `mustnothave` transition for tenant revocation. Do not delete tenant namespaces as a shortcut for revoking permissions.
+This preview does not configure Argo CD. The repository-server integration above is required for the source-based Application.
+
+## Validate workload and console access
+
+Run authorization queries on every target:
+
+```bash
+python3 verify-access.py SPOKE
+```
+
+The script checks a synthetic identity with a specified group list. Repeat checks as real users with their actual memberships; permissions from other bindings are additive. A denial returns status 1 for `oc auth can-i`, which the script handles.
+
+Use disposable VMs to exercise lifecycle actions and approved VM creation/editing. Authorization success alone does not establish successful storage, networking, or admission. Include the maintainer's permitted storage and data references in your review, and add environment-specific admission controls as needed.
+
+Sign in through the hub as each real user. Check fleet inventory, search by another team's known VM name and namespace, and open a saved direct details link. Other teams' VM data must not be exposed. Record separately whether cluster names, namespace names, resource counts, or other metadata are visible. Compare those observations with an explicitly approved metadata-visibility requirement; namespace RBAC alone is not proof that all fleet metadata is confidential.
+
+Verify MRA visibility and reconciliation in `policies`, record the exact installed `acm-vm-fleet:view` definition, and record results in [validation-results.md](validation-results.md). If console or search visibility exceeds the requirement, resolve it before accepting the design for that environment.
+
+## Troubleshoot the layer that failed
+
+| Symptom | Check |
+| --- | --- |
+| Generator cannot load in Argo CD | Init-container completion, image pull access, executable volume mount, `KUSTOMIZE_PLUGIN_HOME`, and `kustomizeBuildOptions: --enable-alpha-plugins` |
+| Placement selects no clusters | Cluster set membership, its namespace binding, opt-in labels, cluster health, and PlacementDecision objects |
+| Role differs on a managed cluster | Spoke policy compliance and its ConfigurationPolicy messages; check for another controller managing the same role |
+| Role is missing from the console | Hub role existence, required labels, feature configuration, and the user's hub console binding |
+| Assignment fails or grants nothing | Installed MRA schema, assignment status, referenced placement, role existence, and target namespace existence |
+| User has too much access | Actual identity-provider groups, all RoleBindings and ClusterRoleBindings, and any assignment with empty target namespaces |
+| Authorization succeeds but VM operation fails | Exact failing API request, admission messages, workload state, and storage or network prerequisites |
+
+## Onboard and revoke access
+
+For a new tenant, create its namespace manifest, group-specific assignment, and hub fleet-access binding. Add the namespace to the spoke baseline and both hub files to the assignment policy. Deploy the namespace first, then the assignment, and extend the authorization tests before promotion.
+
+For revocation, keep the relevant files in the generator and temporarily set `complianceType: mustnothave` on that tenant's assignment and fleet-access manifest entries. For Tenant B, those entries become:
+
+```yaml
+- path: assignments/tenant-b.yaml
+  complianceType: mustnothave
+- path: fleet-access/tenant-b.yaml
+  complianceType: mustnothave
+```
+
+Commit this source change, update the Application to the reviewed commit SHA, and sync the transition while the assignment policy remains enabled. Verify deletion of the hub MRA and hub console binding, then confirm that the MRA controller has removed the managed-cluster bindings and that access checks now deny the former grants. Account for other bindings and group memberships when interpreting those checks.
+
+Only after confirming revocation should you remove those entries and files. Retain tenant namespaces and workloads until a separate approved offboarding process handles them. Removing a file or disabling a policy alone does not revoke existing access with the retention settings in this example.
+
+Keep managed clusters reachable during planned revocation and verify the outcome on each one. Treat placement changes as access changes, including checks for permissions left on previously selected clusters.

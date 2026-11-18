@@ -4,8 +4,8 @@ Examples and guidance for governing virtual machine access across managed cluste
 
 ## Start here
 
-- [Govern VM access across clusters with ACM 5.0](virtrbacblog_v2.md) — the current walkthrough for namespace-scoped tenant access, policy delivery, verification, and revocation.
-- [Tenant-scoped companion example](vm-rbac-example/README.md) — complete manifests, Argo CD PolicyGenerator integration, local preview output, and authorization checks.
+- [Govern VM access with ACM 5.0](virtrbacblog_v2.md) — a reference design for three scoped access tiers, with a shorter article and linked operations guide.
+- [Tenant-scoped companion example](vm-rbac-example/README.md) — complete manifests, Argo CD integration, rollout and revocation procedures, and a validation record.
 - [Full Admin Fleet Virtualization example](examplefulladmin/README.md) — a separate cluster-wide administrative model. Its default wildcard role grants cluster-admin-equivalent access.
 
 The tenant example starts with assignments disabled. Read its rollout and validation instructions before granting access.
