@@ -9,3 +9,9 @@ patches:
     kind: Policy
     name: vm-rbac-hub-roles
   patch: "- op: replace\n  path: /spec/disabled\n  value: true\n"
+- target:
+    group: policy.open-cluster-management.io
+    version: v1
+    kind: Policy
+    name: vm-rbac-hub-assignments
+  patch: "- op: replace\n  path: /spec/disabled\n  value: false\n"
