@@ -212,7 +212,7 @@ Run authorization queries on every target:
 python3 verify-access.py SPOKE
 ```
 
-The script checks a synthetic identity with a specified group list. Repeat checks as real users with their actual memberships; permissions from other bindings are additive. A denial returns status 1 for `oc auth can-i`, which the script handles.
+The script checks a synthetic identity with a specified group list. Repeat checks as real users with their actual memberships; permissions from other bindings are additive. The script submits explicit SelfSubjectAccessReview attributes, including API group and subresource, so client discovery cannot reinterpret the lifecycle endpoints. A nonzero script exit means at least one observed result differed from its expectation. Use `--results FILE` to record details. The hub-only overlay uses `--hub-only`, which expects namespace listing from the separate hub fleet-console grant; do not use that flag for a spoke-only test.
 
 Use disposable VMs to exercise lifecycle actions and approved VM creation/editing. Authorization success alone does not establish successful storage, networking, or admission. Include the maintainer's permitted storage and data references in your review, and add environment-specific admission controls as needed.
 

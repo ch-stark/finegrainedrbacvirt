@@ -15,3 +15,13 @@ patches:
     kind: Policy
     name: vm-rbac-hub-assignments
   patch: "- op: replace\n  path: /spec/disabled\n  value: false\n"
+- target:
+    group: policy.open-cluster-management.io
+    version: v1
+    kind: Policy
+    name: vm-rbac-hub-assignments
+  patch: "- op: test\n  path: /spec/policy-templates/0/objectDefinition/spec/object-templates/2/objectDefinition/metadata/name\n\
+    \  value: tenant-b-vm-access\n- op: replace\n  path: /spec/policy-templates/0/objectDefinition/spec/object-templates/2/complianceType\n\
+    \  value: mustnothave\n- op: test\n  path: /spec/policy-templates/0/objectDefinition/spec/object-templates/3/objectDefinition/metadata/name\n\
+    \  value: tenant-b-fleet-view\n- op: replace\n  path: /spec/policy-templates/0/objectDefinition/spec/object-templates/3/complianceType\n\
+    \  value: mustnothave\n"
