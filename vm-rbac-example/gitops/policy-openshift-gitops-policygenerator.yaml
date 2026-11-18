@@ -1,0 +1,99 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: vm-rbac-policygenerator-setup
+  namespace: policies
+spec:
+  disabled: false
+  remediationAction: inform
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1
+      kind: ConfigurationPolicy
+      metadata:
+        name: vm-rbac-policygenerator-setup
+      spec:
+        remediationAction: inform
+        severity: medium
+        object-templates:
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: argoproj.io/v1beta1
+            kind: ArgoCD
+            metadata:
+              name: openshift-gitops
+              namespace: openshift-gitops
+            spec:
+              kustomizeBuildOptions: --enable-alpha-plugins
+              repo:
+                env:
+                - name: KUSTOMIZE_PLUGIN_HOME
+                  value: /etc/kustomize/plugin
+                initContainers:
+                - name: policy-generator-install
+                  image: registry.redhat.io/rhacm2/multicluster-operators-subscription-rhel9:v5.0
+                  command:
+                  - /bin/bash
+                  args:
+                  - -c
+                  - cp /policy-generator/PolicyGenerator-not-fips-compliant /policy-generator-tmp/PolicyGenerator
+                  volumeMounts:
+                  - name: policy-generator
+                    mountPath: /policy-generator-tmp
+                volumeMounts:
+                - name: policy-generator
+                  mountPath: /etc/kustomize/plugin/policy.open-cluster-management.io/v1/policygenerator
+                volumes:
+                - name: policy-generator
+                  emptyDir: {}
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: vm-rbac-policy-admin
+              namespace: policies
+            rules:
+            - apiGroups:
+              - policy.open-cluster-management.io
+              resources:
+              - policies
+              - policysets
+              - placementbindings
+              verbs:
+              - get
+              - list
+              - watch
+              - create
+              - update
+              - patch
+              - delete
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: vm-rbac-policy-admin
+              namespace: policies
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: Role
+              name: vm-rbac-policy-admin
+            subjects:
+            - kind: ServiceAccount
+              name: openshift-gitops-argocd-application-controller
+              namespace: openshift-gitops
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: vm-rbac-policygenerator-setup
+  namespace: policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: vm-rbac-hub
+subjects:
+- apiGroup: policy.open-cluster-management.io
+  kind: Policy
+  name: vm-rbac-policygenerator-setup

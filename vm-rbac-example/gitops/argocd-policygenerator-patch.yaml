@@ -1,0 +1,23 @@
+spec:
+  kustomizeBuildOptions: --enable-alpha-plugins
+  repo:
+    env:
+    - name: KUSTOMIZE_PLUGIN_HOME
+      value: /etc/kustomize/plugin
+    initContainers:
+    - name: policy-generator-install
+      image: registry.redhat.io/rhacm2/multicluster-operators-subscription-rhel9:v5.0
+      command:
+      - /bin/bash
+      args:
+      - -c
+      - cp /policy-generator/PolicyGenerator-not-fips-compliant /policy-generator-tmp/PolicyGenerator
+      volumeMounts:
+      - name: policy-generator
+        mountPath: /policy-generator-tmp
+    volumeMounts:
+    - name: policy-generator
+      mountPath: /etc/kustomize/plugin/policy.open-cluster-management.io/v1/policygenerator
+    volumes:
+    - name: policy-generator
+      emptyDir: {}

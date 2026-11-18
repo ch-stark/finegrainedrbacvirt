@@ -12,7 +12,7 @@ On 10 November 2026, the example rendered successfully with Kustomize v5.8.1 and
 
 Checks passed for all three MRA manifests against the upstream v1beta1 CRD, all five assignments having explicit namespaces, separate hub and spoke routing, no PolicySet placement binding, identical role definitions at both destinations, strict role-rule compliance, namespace coexistence, object retention, and the disabled assignment gate. The authorization script passed syntax validation.
 
-The included `rendered/vm-rbac.yaml` is the first-stage output. Rebuild it whenever editing the source. The generated YAML is a build artifact; make permission changes in the source files.
+The included `rendered/vm-rbac.yaml` is a local review artifact for the first stage. Rebuild it when editing the source. The Application points at `vm-rbac-example/` and runs PolicyGenerator inside the configured Argo CD repository server; it does not synchronize the `rendered/` directory.
 
 ## What must be validated on ACM 5.0 before publication or production use
 
@@ -26,7 +26,7 @@ No connected ACM environment was used. The following remain release gates for ca
 6. Test real-user hub console access, CLI lifecycle operations, VM creation and modification with the intended storage/network workflow, and denied operations. Inspect audit records. A hidden button is insufficient evidence of denial.
 7. Test revocation, including MRA deletion, downstream binding cleanup, and negative authorization checks. Verify access on previously targeted clusters after placement changes.
 8. Test drift remediation on an example-owned custom role. Confirm no other policy or operator owns the same definition.
-9. Replace deployment placeholders and review the AppProject and Argo CD controller permissions. Test both rollout stages through the intended GitOps delivery process.
+9. Configure and verify the Argo CD init container, plugin mount, build options, controller permissions, and AppProject. Test both rollout stages through source-based GitOps delivery.
 
 Add a short tested-environment note and verified results to the blog after these pass. Do not invent console screenshots, timings, customer outcomes, or cluster-test results.
 
@@ -34,22 +34,52 @@ Add a short tested-environment note and verified results to the blog after these
 
 Follow the blog in order. Commands are run from this directory. Replace HUB and SPOKE with actual kubeconfig context names. The `default` managed cluster set must already exist and contain the hub and selected managed clusters; use a different set consistently if needed.
 
-The plugin executable must be installed at:
+## Configure PolicyGenerator in Argo CD
+
+Follow the documented [ACM 5.0 GitOps policy integration](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/5.0/html-single/gitops). Apply bootstrap first to create the `policies` namespace and hub/spoke placements.
+
+For a direct configuration change, review `gitops/argocd-policygenerator-patch.yaml`. Preserve any existing repository environment variables, init containers, mounts, volumes, and build options by merging them into the patch before applying it; JSON merge patches replace arrays.
+
+```bash
+oc --context HUB patch argocd openshift-gitops -n openshift-gitops \
+  --type=merge --patch-file=gitops/argocd-policygenerator-patch.yaml
+oc --context HUB apply -f gitops/controller-policy-rbac.yaml
+oc --context HUB rollout status deployment/openshift-gitops-repo-server \
+  -n openshift-gitops
+```
+
+The patch installs the binary from the ACM 5.0 image, mounts its plugin directory, sets `KUSTOMIZE_PLUGIN_HOME`, and configures `kustomizeBuildOptions: --enable-alpha-plugins`. Adjust instance names and registry access for your environment. The Role and RoleBinding grant the application controller access to policy resources in `policies`; bootstrap creates placements separately.
+
+Alternatively, apply `gitops/policy-openshift-gitops-policygenerator.yaml` directly with `oc`. This adaptation of the community [PolicyGenerator integration policy](https://github.com/open-cluster-management-io/policy-collection/blob/main/community/CM-Configuration-Management/policy-openshift-gitops-policygenerator.yaml) configures the same ArgoCD resource and controller permissions through governance. It starts in `inform` mode and binds only to `vm-rbac-hub`. Review its differences, change the parent Policy to `enforce`, and wait for compliance and the repository-server rollout. Choose this policy or the direct patch route to manage the integration.
+
+These setup files are deliberately outside the workload generator inputs. Apply them directly before creating the workload Application.
+
+## Deploy the source through Argo CD
+
+`application.yaml` points at this repository's `vm-rbac-example` Kustomization. Set its reviewed commit SHA and adjust the source repository in both the Application and AppProject if deploying from a fork.
+
+```bash
+oc --context HUB apply -f appproject.yaml
+oc --context HUB apply -f application.yaml
+```
+
+Manually sync the Application with `vm-rbac-hub-assignments` disabled. Confirm role and namespace compliance on every selected cluster, then commit the change to `disabled: false`, update the Application revision to that reviewed commit, and manually sync again. Argo CD runs PolicyGenerator for each source revision.
+
+## Render locally for review
+
+For a local preview, install a reviewed PolicyGenerator executable at:
 
 ```text
 $KUSTOMIZE_PLUGIN_HOME/policy.open-cluster-management.io/v1/policygenerator/PolicyGenerator
 ```
 
-Render with:
+Then run:
 
 ```bash
+mkdir -p rendered
 kustomize build --enable-alpha-plugins . > rendered/vm-rbac.yaml
 ```
 
-The bundle does not include an executable plugin. Install a reviewed, pinned version in the build environment. Rendering policies does not require cluster credentials.
-
-Apply bootstrap first. Deploy the initial policies, verify baseline compliance, then set `disabled: false` only for `vm-rbac-hub-assignments`, render again, and promote that reviewed output.
-
-`application.yaml` and `appproject.yaml` use a placeholder repository URL. The Application also requires a reviewed commit SHA. Install them through your existing GitOps administration process after configuring the project and controller access. The Application reads only the `rendered` directory, so it does not ingest source templates or bootstrap resources.
+This local preview does not configure the Argo CD repository server. The Argo CD integration above is required for the source-based Application.
 
 The examples retain objects when policy is deleted. Follow the blog's explicit `mustnothave` transition for tenant revocation. Do not delete tenant namespaces as a shortcut for revoking permissions.

@@ -6,11 +6,10 @@ metadata:
 spec:
   project: vm-rbac
   source:
-    repoURL: https://git.example.com/platform/vm-rbac.git
+    repoURL: https://github.com/ch-stark/finegrainedrbacvirt.git
     targetRevision: REPLACE_WITH_REVIEWED_COMMIT_SHA
-    path: rendered
-    directory:
-      recurse: false
+    path: vm-rbac-example
+    kustomize: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: policies

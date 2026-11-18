@@ -5,15 +5,15 @@ metadata:
   namespace: openshift-gitops
 spec:
   sourceRepos:
-    - https://git.example.com/platform/vm-rbac.git
+  - https://github.com/ch-stark/finegrainedrbacvirt.git
   destinations:
-    - server: https://kubernetes.default.svc
-      namespace: policies
+  - server: https://kubernetes.default.svc
+    namespace: policies
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
-    - group: policy.open-cluster-management.io
-      kind: Policy
-    - group: policy.open-cluster-management.io
-      kind: PolicySet
-    - group: policy.open-cluster-management.io
-      kind: PlacementBinding
+  - group: policy.open-cluster-management.io
+    kind: Policy
+  - group: policy.open-cluster-management.io
+    kind: PolicySet
+  - group: policy.open-cluster-management.io
+    kind: PlacementBinding
