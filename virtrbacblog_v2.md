@@ -8,7 +8,7 @@ This walkthrough shows platform engineers how to keep custom virtual machine per
 
 The result is a repeatable access-management workflow: review the permission change, select the clusters, reconcile the roles, and verify both allowed and denied operations.
 
-The [companion example](vm-rbac-example/README.md) contains the complete manifests, generated first-stage policies, an Argo CD project and application, and an authorization-check script. Keep the `vm-rbac-example` directory beside this Markdown file when sharing the walkthrough. Run the commands from that directory.
+The repository includes a [Full Admin Fleet Virtualization RBAC example and README](https://github.com/ch-stark/finegrainedrbacvirt/blob/main/examplefulladmin/README.md). It demonstrates a broader administrator access model. The tenant-specific manifests used in this walkthrough are supplied separately in the [companion example](vm-rbac-example/README.md), including generated first-stage policies, an Argo CD project and application, and an authorization-check script. Keep the `vm-rbac-example` directory beside this Markdown file when sharing the walkthrough, and run the commands from that directory.
 
 
 ## Use ACM 5.0
@@ -45,6 +45,14 @@ flowchart TD
 The assignment policy stays disabled until the role and namespace baseline is ready. The controller creates bindings; the managed cluster API evaluates them when a user requests an operation.
 
 Hub console access and managed-cluster workload access are separate grants. This example binds `acm-vm-fleet:view` on the hub and namespace-scoped workload roles on the managed clusters. It does not grant tenants permission to administer access assignments.
+
+## Choose the appropriate repository example
+
+The [repository README](https://github.com/ch-stark/finegrainedrbacvirt/blob/main/examplefulladmin/README.md) documents the `examplefulladmin/` directory, its role stack, placement prerequisites, deployment, and optional roles.
+
+Its default `custom-vm-full-admin-role` grants every API group, resource, and verb, including non-resource URLs. The assignment omits `targetNamespaces`, making it cluster-wide on selected managed clusters. As the README explains, this is cluster-admin-equivalent access; adding `kubevirt.io:admin` or `acm-vm-extended:admin` does not restrict it.
+
+Use that example for groups authorized to administer entire clusters. For the tenant access model below, use the companion namespace-scoped assignments and limited custom roles. The repository's optional roles also require explicit review and configuration; their presence in the repository does not include them in the default deployment.
 
 ## Define what each tenant can do
 
@@ -95,7 +103,7 @@ Replace `HUB` and `SPOKE` throughout with your kubeconfig context names.
 
 ## Keep one source for the custom roles
 
-The companion example uses this layout:
+The tenant-scoped companion example uses this layout. Its paths are separate from the repository's `examplefulladmin/` directory:
 
 ```text
 vm-rbac-example/

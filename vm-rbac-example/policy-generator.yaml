@@ -1,0 +1,44 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PolicyGenerator
+metadata:
+  name: vm-rbac
+policyDefaults:
+  namespace: policies
+  remediationAction: enforce
+  complianceType: mustonlyhave
+  metadataComplianceType: musthave
+  pruneObjectBehavior: None
+  policySets:
+  - vm-rbac
+  generatePlacementWhenInSet: true
+policySetDefaults:
+  generatePolicySetPlacement: false
+policies:
+- name: vm-rbac-hub-roles
+  placement:
+    placementName: vm-rbac-hub
+  manifests:
+  - path: roles
+- name: vm-rbac-spoke-baseline
+  placement:
+    placementName: vm-rbac-spokes
+  manifests:
+  - path: roles
+  - path: namespaces
+    complianceType: musthave
+- name: vm-rbac-hub-assignments
+  disabled: true
+  placement:
+    placementName: vm-rbac-hub
+  manifests:
+  - path: assignments/tenant-a.yaml
+  - path: fleet-access/tenant-a.yaml
+  - path: assignments/tenant-b.yaml
+  - path: fleet-access/tenant-b.yaml
+  - path: assignments/tenant-c.yaml
+  - path: fleet-access/tenant-c.yaml
+policySets:
+- name: vm-rbac
+  description: VM roles and tenant assignments with separate policy placements
+placementBindingDefaults:
+  name: vm-rbac-binding

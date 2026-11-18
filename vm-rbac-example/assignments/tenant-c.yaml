@@ -1,0 +1,19 @@
+apiVersion: rbac.open-cluster-management.io/v1beta1
+kind: MulticlusterRoleAssignment
+metadata:
+  name: tenant-c-vm-access
+  namespace: policies
+spec:
+  subject:
+    kind: Group
+    name: tenant-c-viewers
+  roleAssignments:
+  - name: tenant-c-role-1
+    clusterRole: kubevirt.io:view
+    targetNamespaces:
+    - tenant-c-namespace
+    clusterSelection:
+      type: placements
+      placements:
+      - name: vm-rbac-spokes
+        namespace: policies

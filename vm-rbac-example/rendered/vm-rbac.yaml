@@ -1,0 +1,363 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: binding-vm-rbac-spoke-baseline
+  namespace: policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: vm-rbac-spokes
+subjects:
+- apiGroup: policy.open-cluster-management.io
+  kind: Policy
+  name: vm-rbac-spoke-baseline
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: vm-rbac-binding
+  namespace: policies
+placementRef:
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+  name: vm-rbac-hub
+subjects:
+- apiGroup: policy.open-cluster-management.io
+  kind: Policy
+  name: vm-rbac-hub-roles
+- apiGroup: policy.open-cluster-management.io
+  kind: Policy
+  name: vm-rbac-hub-assignments
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  annotations:
+    policy.open-cluster-management.io/categories: CM Configuration Management
+    policy.open-cluster-management.io/controls: CM-2 Baseline Configuration
+    policy.open-cluster-management.io/description: ""
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+  name: vm-rbac-hub-assignments
+  namespace: policies
+spec:
+  disabled: true
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1
+      kind: ConfigurationPolicy
+      metadata:
+        name: vm-rbac-hub-assignments
+      spec:
+        object-templates:
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.open-cluster-management.io/v1beta1
+            kind: MulticlusterRoleAssignment
+            metadata:
+              name: tenant-a-vm-access
+              namespace: policies
+            spec:
+              roleAssignments:
+              - clusterRole: kubevirt.io:view
+                clusterSelection:
+                  placements:
+                  - name: vm-rbac-spokes
+                    namespace: policies
+                  type: placements
+                name: tenant-a-role-1
+                targetNamespaces:
+                - tenant-a-namespace
+              - clusterRole: custom-vm-maintainer
+                clusterSelection:
+                  placements:
+                  - name: vm-rbac-spokes
+                    namespace: policies
+                  type: placements
+                name: tenant-a-role-2
+                targetNamespaces:
+                - tenant-a-namespace
+              subject:
+                kind: Group
+                name: tenant-a-operators
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRoleBinding
+            metadata:
+              name: tenant-a-fleet-view
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: ClusterRole
+              name: acm-vm-fleet:view
+            subjects:
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: tenant-a-operators
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.open-cluster-management.io/v1beta1
+            kind: MulticlusterRoleAssignment
+            metadata:
+              name: tenant-b-vm-access
+              namespace: policies
+            spec:
+              roleAssignments:
+              - clusterRole: kubevirt.io:view
+                clusterSelection:
+                  placements:
+                  - name: vm-rbac-spokes
+                    namespace: policies
+                  type: placements
+                name: tenant-b-role-1
+                targetNamespaces:
+                - tenant-b-namespace
+              - clusterRole: custom-vm-lifecycle
+                clusterSelection:
+                  placements:
+                  - name: vm-rbac-spokes
+                    namespace: policies
+                  type: placements
+                name: tenant-b-role-2
+                targetNamespaces:
+                - tenant-b-namespace
+              subject:
+                kind: Group
+                name: tenant-b-operators
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRoleBinding
+            metadata:
+              name: tenant-b-fleet-view
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: ClusterRole
+              name: acm-vm-fleet:view
+            subjects:
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: tenant-b-operators
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.open-cluster-management.io/v1beta1
+            kind: MulticlusterRoleAssignment
+            metadata:
+              name: tenant-c-vm-access
+              namespace: policies
+            spec:
+              roleAssignments:
+              - clusterRole: kubevirt.io:view
+                clusterSelection:
+                  placements:
+                  - name: vm-rbac-spokes
+                    namespace: policies
+                  type: placements
+                name: tenant-c-role-1
+                targetNamespaces:
+                - tenant-c-namespace
+              subject:
+                kind: Group
+                name: tenant-c-viewers
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRoleBinding
+            metadata:
+              name: tenant-c-fleet-view
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: ClusterRole
+              name: acm-vm-fleet:view
+            subjects:
+            - apiGroup: rbac.authorization.k8s.io
+              kind: Group
+              name: tenant-c-viewers
+        pruneObjectBehavior: None
+        remediationAction: enforce
+        severity: low
+  remediationAction: enforce
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  annotations:
+    policy.open-cluster-management.io/categories: CM Configuration Management
+    policy.open-cluster-management.io/controls: CM-2 Baseline Configuration
+    policy.open-cluster-management.io/description: ""
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+  name: vm-rbac-hub-roles
+  namespace: policies
+spec:
+  disabled: false
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1
+      kind: ConfigurationPolicy
+      metadata:
+        name: vm-rbac-hub-roles
+      spec:
+        object-templates:
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              labels:
+                clusterview.open-cluster-management.io/discoverable: "true"
+                rbac.open-cluster-management.io/custom-role: "true"
+                rbac.open-cluster-management.io/filter: vm-clusterroles
+              name: custom-vm-lifecycle
+            rules:
+            - apiGroups:
+              - subresources.kubevirt.io
+              resources:
+              - virtualmachines/start
+              - virtualmachines/stop
+              - virtualmachines/restart
+              verbs:
+              - update
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              labels:
+                clusterview.open-cluster-management.io/discoverable: "true"
+                rbac.open-cluster-management.io/custom-role: "true"
+                rbac.open-cluster-management.io/filter: vm-clusterroles
+              name: custom-vm-maintainer
+            rules:
+            - apiGroups:
+              - kubevirt.io
+              resources:
+              - virtualmachines
+              verbs:
+              - create
+              - update
+              - patch
+            - apiGroups:
+              - subresources.kubevirt.io
+              resources:
+              - virtualmachines/start
+              - virtualmachines/stop
+              - virtualmachines/restart
+              verbs:
+              - update
+        pruneObjectBehavior: None
+        remediationAction: enforce
+        severity: low
+  remediationAction: enforce
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  annotations:
+    policy.open-cluster-management.io/categories: CM Configuration Management
+    policy.open-cluster-management.io/controls: CM-2 Baseline Configuration
+    policy.open-cluster-management.io/description: ""
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+  name: vm-rbac-spoke-baseline
+  namespace: policies
+spec:
+  disabled: false
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1
+      kind: ConfigurationPolicy
+      metadata:
+        name: vm-rbac-spoke-baseline
+      spec:
+        object-templates:
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              labels:
+                clusterview.open-cluster-management.io/discoverable: "true"
+                rbac.open-cluster-management.io/custom-role: "true"
+                rbac.open-cluster-management.io/filter: vm-clusterroles
+              name: custom-vm-lifecycle
+            rules:
+            - apiGroups:
+              - subresources.kubevirt.io
+              resources:
+              - virtualmachines/start
+              - virtualmachines/stop
+              - virtualmachines/restart
+              verbs:
+              - update
+        - complianceType: mustonlyhave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              labels:
+                clusterview.open-cluster-management.io/discoverable: "true"
+                rbac.open-cluster-management.io/custom-role: "true"
+                rbac.open-cluster-management.io/filter: vm-clusterroles
+              name: custom-vm-maintainer
+            rules:
+            - apiGroups:
+              - kubevirt.io
+              resources:
+              - virtualmachines
+              verbs:
+              - create
+              - update
+              - patch
+            - apiGroups:
+              - subresources.kubevirt.io
+              resources:
+              - virtualmachines/start
+              - virtualmachines/stop
+              - virtualmachines/restart
+              verbs:
+              - update
+        - complianceType: musthave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: tenant-a-namespace
+        - complianceType: musthave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: tenant-b-namespace
+        - complianceType: musthave
+          metadataComplianceType: musthave
+          objectDefinition:
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: tenant-c-namespace
+        pruneObjectBehavior: None
+        remediationAction: enforce
+        severity: low
+  remediationAction: enforce
+---
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: PolicySet
+metadata:
+  name: vm-rbac
+  namespace: policies
+spec:
+  description: VM roles and tenant assignments with separate policy placements
+  policies:
+  - vm-rbac-hub-assignments
+  - vm-rbac-hub-roles
+  - vm-rbac-spoke-baseline

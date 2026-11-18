@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: vm-rbac
+  namespace: openshift-gitops
+spec:
+  sourceRepos:
+    - https://git.example.com/platform/vm-rbac.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: policies
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: policy.open-cluster-management.io
+      kind: Policy
+    - group: policy.open-cluster-management.io
+      kind: PolicySet
+    - group: policy.open-cluster-management.io
+      kind: PlacementBinding

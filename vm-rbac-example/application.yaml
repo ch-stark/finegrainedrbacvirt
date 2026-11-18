@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vm-rbac
+  namespace: openshift-gitops
+spec:
+  project: vm-rbac
+  source:
+    repoURL: https://git.example.com/platform/vm-rbac.git
+    targetRevision: REPLACE_WITH_REVIEWED_COMMIT_SHA
+    path: rendered
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: policies
